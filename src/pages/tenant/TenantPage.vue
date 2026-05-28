@@ -1,0 +1,1099 @@
+<script setup lang="ts">
+import { ref, onMounted, computed, h, onUnmounted } from 'vue'
+import {
+  NCard, NGrid, NGridItem, NForm, NFormItem, NInput, NInputNumber,
+  NButton, NSpace, NTabs, NTabPane, NTag, NText,
+  NSelect, NSpin, NTooltip, NIcon, useMessage,
+  NDataTable, NModal, NPopconfirm, NSwitch,
+} from 'naive-ui'
+import type { DataTableColumns } from 'naive-ui'
+import { Building, Package, Users as UsersIcon, Link, Login, Copy, Check, Calendar, Message, Tag, AlertCircle, FileText, Plus } from '@vicons/tabler'
+import { tenantApi, reminderApi } from '../../api'
+
+const message = useMessage()
+const copied = ref(false)
+const copyingWebhook = ref<string | null>(null)
+const loading = ref(true)
+const saving = ref(false)
+const savingSettings = ref(false)
+const tenant = ref<any>({})
+const webhooks = ref<any[]>([])
+const activeTab = ref('info')
+const windowWidth = ref(window.innerWidth)
+const isMobile = computed(() => windowWidth.value < 640)
+function onResize() { windowWidth.value = window.innerWidth }
+onUnmounted(() => window.removeEventListener('resize', onResize))
+
+// Reminders
+const reminders = ref<any[]>([])
+const showReminderModal = ref(false)
+const editingReminder = ref<any>(null)
+const savingReminder = ref(false)
+const reminderForm = ref({
+  name: '',
+  type: 'before_due',
+  days_offset: 3,
+  agenda: '',
+  message_template: '',
+  is_active: true,
+})
+const reminderTypeOptions = [
+  { label: 'Sebelum Jatuh Tempo', value: 'before_due' },
+  { label: 'Saat Jatuh Tempo', value: 'on_due' },
+  { label: 'Setelah Jatuh Tempo', value: 'after_due' },
+]
+const reminderTypeLabel: Record<string, string> = {
+  before_due: 'Sebelum Jatuh Tempo',
+  on_due: 'Saat Jatuh Tempo',
+  after_due: 'Setelah Jatuh Tempo',
+}
+const reminderTypeTag: Record<string, string> = {
+  before_due: 'info',
+  on_due: 'warning',
+  after_due: 'error',
+}
+const reminderCols: DataTableColumns = [
+  {
+    key: 'name', width: 180, ellipsis: { tooltip: true },
+    title: () => h('div', { style: 'display: flex; align-items: center; gap: 5px' }, [
+      h(NIcon, { component: Tag, size: 13 }),
+      h('span', 'Nama'),
+    ]),
+  },
+  { 
+    key: 'agenda', width: 200, ellipsis: { tooltip: true },
+    title: () => h('div', { style: 'display: flex; align-items: center; gap: 5px' }, [
+      h(NIcon, { component: FileText, size: 13 }),
+      h('span', 'Agenda'),
+    ]),
+    render: (r: any) => h(NText, { depth: 3, style: 'font-size: 12px' }, () => r.agenda || '—'),
+  },
+  {
+    key: 'type', width: 160,
+    title: () => h('div', { style: 'display: flex; align-items: center; gap: 5px' }, [
+      h(NIcon, { component: Calendar, size: 13 }),
+      h('span', 'Tipe'),
+    ]),
+     render: (r: any) => h(NTag, { type: (reminderTypeTag[r.type] || 'default') as any, size: 'small', bordered: false }, () => reminderTypeLabel[r.type] || r.type),
+  },
+  {
+    title: 'Hari', key: 'days_offset', width: 80, align: 'center' as const,
+    render: (r: any) => r.type === 'on_due' ? '-' : `${r.days_offset} hari`,
+  },
+  {
+    title: 'Status', key: 'is_active', width: 80, align: 'center' as const,
+    render: (r: any) => h(NTag, { type: r.is_active ? 'success' : 'default', size: 'small', bordered: false }, () => r.is_active ? 'Aktif' : 'Nonaktif'),
+  },
+  {
+    key: 'message_template', ellipsis: { tooltip: true },
+    title: () => h('div', { style: 'display: flex; align-items: center; gap: 5px' }, [
+      h(NIcon, { component: Message, size: 13 }),
+      h('span', 'Template Pesan'),
+    ]),
+    render: (r: any) => h(NText, { depth: 3, style: 'font-size: 12px' }, () => r.message_template),
+  },
+  {
+    title: '', key: 'actions', width: 120, align: 'right' as const,
+    render: (r: any) => h(NSpace, { size: 4 }, () => [
+      h(NButton, { size: 'tiny', quaternary: true, title: 'Edit', onClick: () => openEditReminder(r), renderIcon: () => h('span', { innerHTML: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>' }) }),
+      h(NPopconfirm, { onPositiveClick: () => deleteReminder(r.id) }, {
+        trigger: () => h(NButton, { size: 'tiny', quaternary: true, type: 'error', title: 'Hapus', renderIcon: () => h('span', { innerHTML: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>' }) }),
+        default: () => 'Hapus pengingat ini?',
+      }),
+    ]),
+  },
+]
+
+const planLabel: Record<string, string> = { trial: 'Trial', basic: 'Basic', pro: 'Pro', enterprise: 'Enterprise' }
+const planType: Record<string, any> = { trial: 'warning', basic: 'info', pro: 'success', enterprise: 'default' }
+
+const timezoneOptions = [
+  { label: 'WIB (Asia/Jakarta)', value: 'Asia/Jakarta' },
+  { label: 'WITA (Asia/Makassar)', value: 'Asia/Makassar' },
+  { label: 'WIT (Asia/Jayapura)', value: 'Asia/Jayapura' },
+]
+
+const currencyOptions = [
+  { label: 'IDR — Rupiah', value: 'IDR' },
+  { label: 'USD — Dollar', value: 'USD' },
+]
+
+const pgProviderOptions = [
+  { label: 'Tidak Ada', value: '' },
+  { label: 'Tripay', value: 'tripay' },
+  { label: 'Midtrans', value: 'midtrans' },
+  { label: 'Xendit', value: 'xendit' },
+]
+
+const pgProviderLabel: Record<string, string> = {
+  tripay: 'Tripay',
+  midtrans: 'Midtrans',
+  xendit: 'Xendit',
+}
+
+const testingConnection = ref(false)
+
+const planExpiresFormatted = computed(() => {
+  if (!tenant.value.plan_expires_at) return '-'
+  return new Date(tenant.value.plan_expires_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+})
+
+async function saveTenant() {
+  if (!tenant.value.name || !tenant.value.email) {
+    message.warning('Nama dan email wajib diisi')
+    return
+  }
+  saving.value = true
+  try {
+    const payload = {
+      name: tenant.value.name,
+      email: tenant.value.email,
+      phone: tenant.value.phone || '',
+      address: tenant.value.address || '',
+      logo_url: tenant.value.logo_url || '',
+      timezone: tenant.value.timezone || 'Asia/Jakarta',
+      currency: tenant.value.currency || 'IDR',
+      billing_cycle: tenant.value.billing_cycle || 1,
+      due_day: tenant.value.due_day || 20,
+      isolir_day: tenant.value.isolir_day || 21,
+      grace_period: tenant.value.grace_period || 3,
+      is_active: tenant.value.is_active !== false,
+    }
+    const { data } = await tenantApi.update(payload)
+    tenant.value = data || tenant.value
+    message.success('Data tenant disimpan')
+  } catch { message.error('Gagal menyimpan') }
+  saving.value = false
+}
+
+async function saveSettings() {
+  savingSettings.value = true
+  try {
+    await tenantApi.updateSettings({
+      pg_provider: tenant.value.pg_provider || '',
+      pg_api_key: tenant.value.pg_api_key || '',
+      pg_secret_key: tenant.value.pg_secret_key || '',
+      pg_merchant_id: tenant.value.pg_merchant_id || '',
+      pg_sandbox: tenant.value.pg_sandbox !== false,
+    })
+    message.success('Pengaturan integrasi disimpan')
+  } catch { message.error('Gagal menyimpan pengaturan') }
+  savingSettings.value = false
+}
+
+async function testConnection() {
+  testingConnection.value = true
+  try {
+    const { data } = await tenantApi.testSettings()
+    if (data.success) {
+      message.success(data.message || 'Koneksi payment gateway berhasil')
+    } else {
+      message.error(data.error || 'Koneksi gagal')
+    }
+  } catch (e: any) {
+    message.error(e.response?.data?.error || 'Gagal menguji koneksi')
+  }
+  testingConnection.value = false
+}
+
+onMounted(async () => {
+  window.addEventListener('resize', onResize)
+  try {
+    const [tRes, wRes] = await Promise.all([
+      tenantApi.current(),
+      tenantApi.webhooks().catch(() => ({ data: {} })),
+    ])
+    // GetCurrent returns tenant directly (not wrapped in .data)
+    tenant.value = tRes.data?.data || tRes.data || {}
+    const rawWebhooks = wRes.data?.data
+    if (Array.isArray(rawWebhooks)) {
+      webhooks.value = rawWebhooks
+    } else if (rawWebhooks && typeof rawWebhooks === 'object') {
+      webhooks.value = Object.entries(rawWebhooks).map(([event, url]) => ({ event, url }))
+    }
+  } catch { message.error('Gagal memuat data tenant') }
+  await loadReminders()
+  loading.value = false
+})
+
+const portalLoginUrl = computed(() => {
+  if (!tenant.value.slug) return ''
+  return `${window.location.origin}/portal/login/${tenant.value.slug}`
+})
+
+function copyPortalLink() {
+  if (!portalLoginUrl.value) return
+  navigator.clipboard.writeText(portalLoginUrl.value).then(() => {
+    copied.value = true
+    message.success('Link portal berhasil disalin')
+    setTimeout(() => { copied.value = false }, 2000)
+  })
+}
+
+function copyWebhook(event: string) {
+  const w = webhooks.value.find(x => x.event === event)
+  if (!w) return
+  copyingWebhook.value = event
+  navigator.clipboard.writeText(w.url).then(() => {
+    message.success('URL disalin')
+  }).catch(() => { message.error('Gagal menyalin') })
+  setTimeout(() => { copyingWebhook.value = null }, 1500)
+}
+
+async function loadReminders() {
+  try {
+    const { data: res } = await reminderApi.list()
+    reminders.value = res.data || []
+  } catch { reminders.value = [] }
+}
+
+function openCreateReminder() {
+  editingReminder.value = null
+  reminderForm.value = { name: '', type: 'before_due', days_offset: 3, agenda: '', message_template: '', is_active: true }
+  showReminderModal.value = true
+}
+
+function openEditReminder(r: any) {
+  editingReminder.value = r
+  
+  // Ensure type is valid, fallback to before_due
+  const validTypes = ['before_due', 'on_due', 'after_due']
+  const cleanType = validTypes.includes(r.type) ? r.type : 'before_due'
+  
+  reminderForm.value = {
+    name: r.name || '',
+    type: cleanType,
+    days_offset: r.days_offset ?? 3,
+    agenda: r.agenda || '',
+    message_template: r.message_template || '',
+    is_active: r.is_active ?? true,
+  }
+  
+  showReminderModal.value = true
+}
+
+async function saveReminder() {
+  const f = reminderForm.value
+  if (!f.name || !f.type || !f.message_template) {
+    message.warning('Nama, tipe, dan template pesan wajib diisi')
+    return
+  }
+  
+  // Validate type explicitly
+  const validTypes = ['before_due', 'on_due', 'after_due']
+  const cleanType = String(f.type).trim()
+  if (!validTypes.includes(cleanType)) {
+    message.error(`Tipe tidak valid: ${cleanType}. Harus salah satu dari: ${validTypes.join(', ')}`)
+    return
+  }
+  
+  // Build clean payload
+  const payload: any = {
+    name: String(f.name).trim(),
+    type: cleanType,
+    agenda: String(f.agenda || '').trim(),
+    message_template: String(f.message_template),
+    is_active: Boolean(f.is_active ?? true),
+  }
+  
+  // Only include days_offset if type is not on_due
+  if (cleanType !== 'on_due') {
+    payload.days_offset = Number(f.days_offset ?? 0)
+  }
+  
+  
+  savingReminder.value = true
+  try {
+    if (editingReminder.value) {
+      await reminderApi.update(editingReminder.value.id, payload)
+      message.success('Pengingat diperbarui')
+    } else {
+      await reminderApi.create(payload)
+      message.success('Pengingat ditambahkan')
+    }
+    showReminderModal.value = false
+    await loadReminders()
+  } catch { message.error('Gagal menyimpan pengingat') }
+  savingReminder.value = false
+}
+
+async function deleteReminder(id: string) {
+  try {
+    await reminderApi.delete(id)
+    message.success('Pengingat dihapus')
+    await loadReminders()
+  } catch { message.error('Gagal menghapus') }
+}
+
+async function triggerReminders() {
+  try {
+    const { data } = await reminderApi.trigger()
+    message.success(`Pengingat dipicu: ${data.sent || 0} terkirim`)
+  } catch { message.error('Gagal memicu pengingat') }
+}
+</script>
+
+<template>
+  <n-spin :show="loading">
+    <n-space vertical :size="16">
+      <!-- Header Stats -->
+      <n-card size="small">
+        <n-grid :cols="4" :x-gap="0" :y-gap="0" responsive="screen" item-responsive>
+          <n-grid-item span="4 s:2 m:1">
+            <div class="stat-cell">
+              <n-space align="center" :size="8" style="margin-bottom: 6px">
+                <n-icon :size="18" :color="'#3b82f6'"><Building /></n-icon>
+                <n-text depth="3" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px">Nama ISP</n-text>
+              </n-space>
+              <n-text strong tag="div" style="font-size: 18px">{{ tenant.name || '-' }}</n-text>
+            </div>
+          </n-grid-item>
+          <n-grid-item span="4 s:2 m:1">
+            <div class="stat-cell">
+              <n-space align="center" :size="8" style="margin-bottom: 6px">
+                <n-icon :size="18" :color="'#8b5cf6'"><Package /></n-icon>
+                <n-text depth="3" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px">Paket</n-text>
+              </n-space>
+              <n-space align="baseline" :size="8">
+                <n-tag :type="planType[tenant.plan] || 'default'" size="small" round>{{ planLabel[tenant.plan] || tenant.plan || '-' }}</n-tag>
+              </n-space>
+              <n-text depth="3" tag="div" style="font-size: 11px; margin-top: 4px">Berlaku s/d {{ planExpiresFormatted }}</n-text>
+            </div>
+          </n-grid-item>
+          <n-grid-item span="4 s:2 m:1">
+            <div class="stat-cell">
+              <n-space align="center" :size="8" style="margin-bottom: 6px">
+                <n-icon :size="18" :color="'#22c55e'"><UsersIcon /></n-icon>
+                <n-text depth="3" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px">Maks. Pelanggan</n-text>
+              </n-space>
+              <n-text strong tag="div" style="font-size: 18px">{{ tenant.max_customers || 0 }}</n-text>
+            </div>
+          </n-grid-item>
+          <n-grid-item span="4 s:2 m:1">
+            <div class="stat-cell">
+              <n-space align="center" :size="8" style="margin-bottom: 6px">
+                <n-icon :size="18" :color="'#f59e0b'"><Link /></n-icon>
+                <n-text depth="3" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px">Slug</n-text>
+              </n-space>
+              <n-text tag="div" code style="font-size: 12px; word-break: break-all">{{ tenant.slug || '-' }}</n-text>
+            </div>
+          </n-grid-item>
+        </n-grid>
+      </n-card>
+
+      <!-- Portal Login Link -->
+      <n-card v-if="tenant.slug" size="small" class="portal-link-card">
+        <n-space align="center" justify="space-between" :wrap="true" :size="[12, 8]">
+          <n-space align="center" :size="10" :wrap="false">
+            <n-icon :size="20" :color="'#00e5ff'"><Login /></n-icon>
+            <div>
+              <n-text depth="3" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; display: block">Link Portal Pelanggan</n-text>
+              <n-text code tag="div" style="font-size: 13px; word-break: break-all; margin-top: 2px">{{ portalLoginUrl }}</n-text>
+            </div>
+          </n-space>
+          <n-tooltip trigger="hover">
+            <template #trigger>
+              <n-button size="small" :type="copied ? 'success' : 'primary'" secondary @click="copyPortalLink">
+                <template #icon>
+                  <n-icon v-if="!copied" :size="14"><Copy /></n-icon>
+                  <n-icon v-else :size="14"><Check /></n-icon>
+                </template>
+                {{ copied ? 'Tersalin!' : 'Salin Link' }}
+              </n-button>
+            </template>
+            Bagikan link ini ke pelanggan untuk login ke portal
+          </n-tooltip>
+        </n-space>
+      </n-card>
+
+      <!-- Tabs -->
+      <n-card>
+        <n-tabs v-model:value="activeTab" type="line">
+          <!-- Informasi Umum -->
+          <n-tab-pane name="info" tab="Informasi Umum">
+            <n-form label-placement="top">
+              <n-grid :cols="4" :x-gap="16" :y-gap="0" responsive="screen" item-responsive>
+                <n-grid-item span="4 s:2 m:2">
+                  <n-form-item label="Nama ISP"><n-input v-model:value="tenant.name" placeholder="Nama perusahaan ISP" /></n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Email"><n-input v-model:value="tenant.email" placeholder="email@isp.com" /></n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Telepon"><n-input v-model:value="tenant.phone" placeholder="08xx" /></n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 m:4">
+                  <n-form-item label="Alamat"><n-input v-model:value="tenant.address" type="textarea" :rows="2" placeholder="Alamat lengkap" /></n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Timezone"><n-select v-model:value="tenant.timezone" :options="timezoneOptions" /></n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Mata Uang"><n-select v-model:value="tenant.currency" :options="currencyOptions" /></n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:2">
+                  <n-form-item label="URL Logo"><n-input v-model:value="tenant.logo_url" placeholder="https://..." /></n-form-item>
+                </n-grid-item>
+              </n-grid>
+              <n-space justify="end" style="margin-top: 8px">
+                <n-button type="primary" :loading="saving" @click="saveTenant">Simpan Informasi</n-button>
+              </n-space>
+            </n-form>
+          </n-tab-pane>
+
+          <!-- Konfigurasi Billing -->
+          <n-tab-pane name="billing" tab="Konfigurasi Billing">
+            <n-form label-placement="top">
+              <div class="billing-flow">
+                <div class="bf-step">
+                  <div class="bf-num">1</div>
+                  <div class="bf-label">Generate Invoice</div>
+                  <div class="bf-sub">Tgl {{ tenant.billing_cycle || 1 }} setiap bulan</div>
+                </div>
+                <div class="bf-arrow">→</div>
+                <div class="bf-step">
+                  <div class="bf-num">2</div>
+                  <div class="bf-label">Jatuh Tempo</div>
+                  <div class="bf-sub">Tgl {{ tenant.due_day || 20 }}</div>
+                </div>
+                <div class="bf-arrow">→</div>
+                <div class="bf-step">
+                  <div class="bf-num">3</div>
+                  <div class="bf-label">Grace Period</div>
+                  <div class="bf-sub">{{ tenant.grace_period || 3 }} hari</div>
+                </div>
+                <div class="bf-arrow">→</div>
+                <div class="bf-step bf-step-warn">
+                  <div class="bf-num">4</div>
+                  <div class="bf-label">Isolir</div>
+                  <div class="bf-sub">+{{ tenant.isolir_day || 5 }} hari setelah JT</div>
+                </div>
+              </div>
+              <n-grid :cols="4" :x-gap="16" :y-gap="0" responsive="screen" item-responsive>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Tgl Generate Invoice">
+                    <n-input-number v-model:value="tenant.billing_cycle" :min="1" :max="28" style="width: 100%" />
+                  </n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Tanggal Jatuh Tempo">
+                    <n-input-number v-model:value="tenant.due_day" :min="1" :max="28" style="width: 100%" />
+                  </n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Hari Isolir setelah JT">
+                    <n-input-number v-model:value="tenant.isolir_day" :min="0" style="width: 100%" />
+                  </n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Grace Period (hari)">
+                    <n-input-number v-model:value="tenant.grace_period" :min="0" :max="30" style="width: 100%" />
+                  </n-form-item>
+                </n-grid-item>
+              </n-grid>
+              <n-space justify="end" style="margin-top: 8px">
+                <n-button type="primary" :loading="saving" @click="saveTenant">Simpan Billing</n-button>
+              </n-space>
+            </n-form>
+          </n-tab-pane>
+
+          <!-- Pengingat -->
+          <n-tab-pane name="reminders" :tab="`Pengingat (${reminders.length})`">
+            <div class="reminder-header">
+              <p class="tab-desc" style="margin-bottom: 0">
+                Atur pengingat otomatis via WhatsApp untuk tagihan pelanggan.
+              </p>
+              <div class="reminder-actions">
+                <n-popconfirm @positive-click="triggerReminders">
+                  <template #trigger>
+                    <n-button size="small" secondary>Picu Manual</n-button>
+                  </template>
+                  Kirim semua pengingat aktif sekarang?
+                </n-popconfirm>
+                <n-button type="primary" size="small" @click="openCreateReminder">
+                  <template #icon><n-icon :component="Plus" :size="15" /></template>
+                  Tambah
+                </n-button>
+              </div>
+            </div>
+
+            <!-- Desktop table -->
+            <n-data-table v-if="!isMobile" :columns="reminderCols" :data="reminders" :bordered="false" size="small" />
+
+            <!-- Mobile cards -->
+            <div v-else class="reminder-cards">
+              <div v-if="!reminders.length" class="reminder-empty">Belum ada pengingat</div>
+              <div v-for="r in reminders" :key="r.id" class="reminder-card">
+                <div class="reminder-card-top">
+                  <span class="reminder-card-name">{{ r.name }}</span>
+                  <n-tag :type="(reminderTypeTag[r.type] as any) || 'default'" size="small" :bordered="false">
+                    {{ reminderTypeLabel[r.type] || r.type }}
+                  </n-tag>
+                </div>
+                <p v-if="r.agenda" class="reminder-card-agenda">{{ r.agenda }}</p>
+                <div class="reminder-card-meta">
+                  <span v-if="r.type !== 'on_due'" class="meta-item">{{ r.days_offset }} hari</span>
+                  <n-tag :type="r.is_active ? 'success' : 'default'" size="tiny" :bordered="false">
+                    {{ r.is_active ? 'Aktif' : 'Nonaktif' }}
+                  </n-tag>
+                </div>
+                <p v-if="r.message_template" class="reminder-card-msg">{{ r.message_template }}</p>
+                <div class="reminder-card-actions">
+                  <n-button size="tiny" quaternary @click="openEditReminder(r)">Edit</n-button>
+                  <n-popconfirm @positive-click="deleteReminder(r.id)">
+                    <template #trigger>
+                      <n-button size="tiny" quaternary type="error">Hapus</n-button>
+                    </template>
+                    Hapus pengingat ini?
+                  </n-popconfirm>
+                </div>
+              </div>
+            </div>
+          </n-tab-pane>
+
+          <!-- Integrasi -->
+          <n-tab-pane name="integrations" tab="Integrasi">
+            <n-form label-placement="top">
+              <div class="pg-section-title">Payment Gateway</div>
+              <n-space align="center" :size="8" style="margin-bottom: 12px">
+                <n-tag v-if="tenant.pg_provider" type="success" size="small" :bordered="false">{{ pgProviderLabel[tenant.pg_provider] || tenant.pg_provider }}</n-tag>
+                <n-tag v-else type="warning" size="small" :bordered="false">Belum diatur</n-tag>
+                <n-tag v-if="tenant.pg_provider && tenant.pg_sandbox !== false" type="warning" size="small" :bordered="false">Mode Testing</n-tag>
+                <n-tag v-else-if="tenant.pg_provider" type="success" size="small" :bordered="false">Mode Produksi</n-tag>
+              </n-space>
+              <n-grid :cols="4" :x-gap="16" :y-gap="0" responsive="screen" item-responsive>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Provider">
+                    <n-select v-model:value="tenant.pg_provider" :options="pgProviderOptions" clearable />
+                  </n-form-item>
+                </n-grid-item>
+                <n-grid-item v-if="tenant.pg_provider" span="4 s:2 m:1">
+                  <n-form-item label="Mode Sandbox">
+                    <n-switch v-model:value="tenant.pg_sandbox" :round="false">
+                      <template #checked>Testing</template>
+                      <template #unchecked>Produksi</template>
+                    </n-switch>
+                  </n-form-item>
+                </n-grid-item>
+                <template v-if="tenant.pg_provider === 'tripay'">
+                  <n-grid-item span="4 s:2 m:1">
+                    <n-form-item label="API Key">
+                      <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="Tripay API Key" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item span="4 s:2 m:1">
+                    <n-form-item label="Private Key">
+                      <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="Tripay Private Key" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item span="4 s:2 m:1">
+                    <n-form-item label="Merchant Code">
+                      <n-input v-model:value="tenant.pg_merchant_id" placeholder="Kode merchant Tripay" />
+                    </n-form-item>
+                  </n-grid-item>
+                </template>
+                <template v-else-if="tenant.pg_provider === 'midtrans'">
+                  <n-grid-item span="4 s:2 m:1">
+                    <n-form-item label="Client Key">
+                      <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="SB-Mid-client-xxx" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item span="4 s:2 m:1">
+                    <n-form-item label="Server Key">
+                      <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="SB-Mid-server-xxx" />
+                    </n-form-item>
+                  </n-grid-item>
+                </template>
+                <template v-else-if="tenant.pg_provider === 'xendit'">
+                  <n-grid-item span="4 s:2 m:1">
+                    <n-form-item label="Secret Key (xnd_...)">
+                      <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="xnd_development_XXXXXXXX" />
+                    </n-form-item>
+                  </n-grid-item>
+                  <n-grid-item span="4 s:2 m:1">
+                    <n-form-item label="Webhook Verification Token">
+                      <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="Token verifikasi webhook Xendit" />
+                    </n-form-item>
+                  </n-grid-item>
+                </template>
+              </n-grid>
+              <n-space justify="end" :size="8" style="margin-top: 8px">
+                <n-button v-if="tenant.pg_provider" secondary :loading="testingConnection" @click="testConnection">
+                  Test Koneksi
+                </n-button>
+                <n-button type="primary" :loading="savingSettings" @click="saveSettings">Simpan Integrasi</n-button>
+              </n-space>
+            </n-form>
+          </n-tab-pane>
+
+          <!-- Webhooks -->
+          <n-tab-pane name="webhooks" :tab="`Webhooks (${webhooks.length})`">
+            <p class="tab-desc">Daftarkan URL berikut di dashboard payment gateway agar callback pembayaran otomatis masuk ke sistem.</p>
+            <div v-if="webhooks.length" class="webhook-list">
+              <div v-for="w in webhooks" :key="w.event" class="webhook-row">
+                <div class="webhook-info">
+                  <span class="webhook-label">{{ w.event }}</span>
+                  <span class="webhook-url">{{ w.url }}</span>
+                </div>
+                <n-button size="small" :type="copyingWebhook === w.event ? 'success' : 'default'" @click="copyWebhook(w.event)">
+                  {{ copyingWebhook === w.event ? 'Disalin!' : 'Salin' }}
+                </n-button>
+              </div>
+            </div>
+            <n-text v-else depth="3" style="font-size: 13px">Belum ada webhook terdaftar.</n-text>
+          </n-tab-pane>
+        </n-tabs>
+      </n-card>
+    </n-space>
+
+    <!-- Reminder Modal -->
+    <n-modal
+      v-model:show="showReminderModal"
+      preset="card"
+      :title="editingReminder ? 'Edit Pengingat' : 'Tambah Pengingat'"
+      :style="{ maxWidth: isMobile ? '95vw' : '750px', width: '95vw' }"
+    >
+      <n-grid :cols="isMobile ? 1 : 2" :x-gap="20">
+        <!-- Left Column: Form Fields -->
+        <n-grid-item>
+          <n-form label-placement="top">
+            <n-form-item>
+              <template #label>
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <n-icon :component="Tag" :size="14" />
+                  <span>Nama</span>
+                </div>
+              </template>
+              <n-input v-model:value="reminderForm.name" placeholder="Reminder H-3" />
+            </n-form-item>
+            
+            <n-form-item>
+              <template #label>
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <n-icon :component="Calendar" :size="14" />
+                  <span>Tipe</span>
+                </div>
+              </template>
+              <n-select v-model:value="reminderForm.type" :options="reminderTypeOptions" />
+            </n-form-item>
+            
+            <n-form-item label="Offset (hari)">
+              <n-input-number v-model:value="reminderForm.days_offset" :min="0" :max="30" style="width: 100%" :disabled="reminderForm.type === 'on_due'" />
+            </n-form-item>
+            
+            <n-form-item>
+              <template #label>
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <n-icon :component="FileText" :size="14" />
+                  <span>Agenda</span>
+                </div>
+              </template>
+              <n-input v-model:value="reminderForm.agenda" placeholder="Pengingat jatuh tempo" />
+            </n-form-item>
+            
+            <n-form-item label="Aktif">
+              <n-switch v-model:value="reminderForm.is_active" />
+            </n-form-item>
+          </n-form>
+        </n-grid-item>
+
+        <!-- Right Column: Template Pesan -->
+        <n-grid-item>
+          <n-form label-placement="top">
+            <n-form-item>
+              <template #label>
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <n-icon :component="Message" :size="14" />
+                  <span>Template Pesan</span>
+                </div>
+              </template>
+              <n-input 
+                v-model:value="reminderForm.message_template" 
+                type="textarea" 
+                :rows="6" 
+                placeholder="*Halo {customer_name}*,&#10;&#10;Tagihan Anda sebesar *Rp {amount}* akan jatuh tempo pada _{due_date}_.&#10;&#10;Terima kasih." 
+              />
+            </n-form-item>
+          </n-form>
+          
+          <!-- WhatsApp Formatting Guide -->
+          <div class="wa-format-guide">
+            <div class="wa-guide-title">
+              <n-icon :component="AlertCircle" :size="13" style="opacity: 0.6" />
+              <span>Format WhatsApp</span>
+            </div>
+            <div class="wa-guide-items">
+              <div class="wa-guide-item"><code>*tebal*</code> → <strong>tebal</strong></div>
+              <div class="wa-guide-item"><code>_miring_</code> → <em>miring</em></div>
+              <div class="wa-guide-item"><code>~coret~</code> → <s>coret</s></div>
+              <div class="wa-guide-item"><code>```mono```</code> → <code>mono</code></div>
+            </div>
+          </div>
+          
+          <!-- Variables Hint -->
+          <div class="variables-hint-box">
+            <div class="hint-title">Variabel Tersedia:</div>
+            <div class="hint-vars">
+              <span class="hint-var">{salam}</span>
+              <span class="hint-var">{nama}</span>
+              <span class="hint-var">{kode_pelanggan}</span>
+              <span class="hint-var">{nomor_invoice}</span>
+              <span class="hint-var">{periode}</span>
+              <span class="hint-var">{paket}</span>
+              <span class="hint-var">{jumlah}</span>
+              <span class="hint-var">{jatuh_tempo}</span>
+            </div>
+          </div>
+        </n-grid-item>
+      </n-grid>
+      
+      <template #action>
+        <div class="modal-actions">
+          <n-button @click="showReminderModal = false">Batal</n-button>
+          <n-button type="primary" :loading="savingReminder" @click="saveReminder">
+            {{ editingReminder ? 'Perbarui' : 'Tambah' }}
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
+  </n-spin>
+</template>
+
+<style scoped>
+.stat-cell {
+  padding: 12px 16px;
+}
+
+@media (min-width: 640px) {
+  .stat-cell {
+    border-left: 1px solid rgba(128, 128, 128, 0.15);
+  }
+  .n-grid-item:first-child .stat-cell {
+    border-left: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .stat-cell {
+    border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+    padding: 10px 12px;
+  }
+}
+
+.portal-link-card {
+  border: 1px solid rgba(0, 229, 255, 0.15);
+  background: rgba(0, 229, 255, 0.03);
+}
+
+/* ── Billing Flow Preview ─────────── */
+.billing-flow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: rgba(128,128,128,0.04);
+  border: 1px solid rgba(128,128,128,0.1);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+:root.dark .billing-flow {
+  background: rgba(255,255,255,0.03);
+  border-color: rgba(255,255,255,0.07);
+}
+
+.bf-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 70px;
+}
+
+.bf-num {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: rgba(59,130,246,0.15);
+  color: #3b82f6;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bf-step-warn .bf-num { background: rgba(239,68,68,0.12); color: #ef4444; }
+
+.bf-label { font-size: 12px; font-weight: 600; text-align: center; }
+.bf-sub   { font-size: 11px; opacity: 0.45; text-align: center; white-space: nowrap; }
+
+.bf-arrow { font-size: 16px; opacity: 0.25; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .billing-flow { gap: 4px; }
+  .bf-step { min-width: 55px; }
+  .bf-label { font-size: 11px; }
+  .webhook-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+/* ── PG Section ───────────────────── */
+.pg-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.45;
+  margin-bottom: 10px;
+}
+
+/* ── Webhook ──────────────────────── */
+.webhook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.webhook-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  border: 1px solid rgba(128,128,128,0.12);
+  background: rgba(128,128,128,0.03);
+}
+:root.dark .webhook-row {
+  border-color: rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.02);
+}
+
+.webhook-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.webhook-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.webhook-url {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  opacity: 0.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Reminder ─────────────────────── */
+.tab-desc {
+  font-size: 13px;
+  opacity: 0.5;
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+.reminder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.reminder-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.reminder-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reminder-empty {
+  text-align: center;
+  padding: 32px;
+  opacity: 0.4;
+  font-size: 13px;
+}
+
+.reminder-card {
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.12);
+  background: rgba(128, 128, 128, 0.03);
+}
+
+:root.dark .reminder-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.reminder-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.reminder-card-name {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reminder-card-agenda {
+  margin: 0 0 6px;
+  font-size: 12px;
+  opacity: 0.55;
+  font-style: italic;
+  line-height: 1.3;
+}
+
+.reminder-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.meta-item {
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.reminder-card-msg {
+  margin: 0 0 8px;
+  font-size: 12px;
+  opacity: 0.45;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.reminder-card-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.modal-row {
+  display: flex;
+  gap: 12px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.wa-format-guide {
+  background: rgba(128,128,128,0.04);
+  border: 1px solid rgba(128,128,128,0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+:root.dark .wa-format-guide {
+  background: rgba(255,255,255,0.02);
+  border-color: rgba(255,255,255,0.06);
+}
+
+.wa-guide-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.6;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.wa-guide-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wa-guide-item {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wa-guide-item code {
+  background: rgba(128,128,128,0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+:root.dark .wa-guide-item code {
+  background: rgba(255,255,255,0.08);
+}
+
+.variables-hint-box {
+  background: rgba(59,130,246,0.05);
+  border: 1px solid rgba(59,130,246,0.15);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+:root.dark .variables-hint-box {
+  background: rgba(59,130,246,0.08);
+  border-color: rgba(59,130,246,0.2);
+}
+
+.hint-title {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+  margin-bottom: 6px;
+}
+
+.hint-vars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.hint-var {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  background: rgba(59,130,246,0.1);
+  color: #3b82f6;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+:root.dark .hint-var {
+  background: rgba(59,130,246,0.15);
+  color: #60a5fa;
+}
+
+.variables-hint {
+  font-size: 11px;
+  opacity: 0.45;
+  margin: 0;
+}
+
+.tab-desc {
+  font-size: 13px;
+  opacity: 0.6;
+  margin: 0 0 16px;
+}
+</style>

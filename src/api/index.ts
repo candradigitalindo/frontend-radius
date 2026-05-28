@@ -1,0 +1,31 @@
+/**
+ * API Services — barrel file
+ *
+ * Semua API service dire-export dari sini untuk backward compatibility.
+ * Import pattern di komponen tetap: import { customerApi } from '../../api'
+ */
+export { portalApi } from './services/portal'
+export { authApi } from './services/auth'
+export { dashboardApi } from './services/dashboard'
+export { customerApi } from './services/customer'
+export { packageApi } from './services/package'
+export { invoiceApi, paymentApi } from './services/invoice'
+export { routerApi } from './services/router'
+export { ticketApi } from './services/ticket'
+export { oltApi } from './services/olt'
+export { odpApi } from './services/odp'
+export { ontApi } from './services/ont'
+export { reportApi, exportApi } from './services/report'
+export { bandwidthApi } from './services/bandwidth'
+export { voucherApi } from './services/voucher'
+export { expenseApi } from './services/expense'
+export { settingApi } from './services/setting'
+export { userApi, roleApi } from './services/user'
+export { tenantApi, reminderApi } from './services/tenant'
+export { whatsappApi } from './services/whatsapp'
+export { rewardApi, rewardClaimApi, referralApi } from './services/reward'
+export { resellerApi } from './services/reseller'
+export { ipamApi } from './services/ipam'
+export { notificationApi, i18nApi } from './services/notification'
+export { subscriptionApi } from './services/subscription'
+export { adminApi } from './services/admin'

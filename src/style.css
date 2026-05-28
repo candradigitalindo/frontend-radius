@@ -1,0 +1,168 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+}
+
+:root {
+  --telecom-dark: #0a0e27;
+  --telecom-navy: #0f1640;
+  --telecom-blue: #1a237e;
+  --telecom-cyan: #00e5ff;
+  --telecom-teal: #00bcd4;
+  --telecom-glow: rgba(0, 229, 255, 0.15);
+  --telecom-fiber: linear-gradient(135deg, #00e5ff, #7c4dff, #ff1744, #00e5ff);
+  --telecom-gradient: linear-gradient(135deg, #0a0e27 0%, #1a237e 50%, #0d47a1 100%);
+  --telecom-card: rgba(15, 22, 64, 0.85);
+  --telecom-sidebar: linear-gradient(180deg, #0a0e27 0%, #0f1640 60%, #1a237e 100%);
+
+  /* Adaptive colors - dark defaults */
+  --app-bg: #080c22;
+  --app-header-bg: rgba(10, 14, 39, 0.6);
+  --app-header-border: rgba(0, 229, 255, 0.06);
+  --app-sidebar-bg: linear-gradient(180deg, #0a0e27 0%, #0f1640 60%, #111b52 100%);
+  --app-sidebar-border: rgba(0, 229, 255, 0.08);
+  --app-accent: #00e5ff;
+  --app-accent-soft: rgba(0, 229, 255, 0.06);
+  --app-accent-medium: rgba(0, 229, 255, 0.12);
+  --app-accent-strong: rgba(0, 229, 255, 0.2);
+  --app-text-primary: #e0f7fa;
+  --app-text-secondary: #b2ebf2;
+  --app-text-muted: #80deea;
+  --app-card-border: rgba(0, 229, 255, 0.18);
+  --app-logo-gradient: linear-gradient(135deg, #00e5ff, #b2ebf2);
+  --app-menu-icon: rgba(0, 229, 255, 0.5);
+  --app-menu-icon-active: #00e5ff;
+  --app-menu-selected-bg: rgba(0, 229, 255, 0.1);
+  --app-toggle-bg: #0f1640;
+  --app-toggle-border: rgba(0, 229, 255, 0.2);
+  --app-avatar-gradient: linear-gradient(135deg, #00e5ff, #0097a7);
+  --app-badge-hover: rgba(0, 229, 255, 0.06);
+  --app-chart-tooltip-bg: #0f1640;
+  --app-chart-tooltip-border: rgba(0, 229, 255, 0.2);
+  --app-chart-tooltip-text: #b2ebf2;
+  --app-chart-axis-line: rgba(0, 229, 255, 0.15);
+  --app-chart-axis-label: #80deea;
+  --app-chart-split-line: rgba(0, 229, 255, 0.06);
+  --app-stat-shadow: rgba(0, 0, 0, 0.2);
+  --app-scrollbar-thumb: rgba(0, 229, 255, 0.3);
+  --app-scrollbar-thumb-hover: rgba(0, 229, 255, 0.5);
+  --app-scrollbar-track: rgba(10, 14, 39, 0.5);
+}
+
+/* ===== LIGHT MODE ===== */
+html:not(.dark) {
+  --app-bg: #f0f4f8;
+  --app-header-bg: rgba(255, 255, 255, 0.85);
+  --app-header-border: #e2e8f0;
+  --app-sidebar-bg: linear-gradient(180deg, #ffffff 0%, #f7fafc 60%, #edf2f7 100%);
+  --app-sidebar-border: #e2e8f0;
+  --app-accent: #00838f;
+  --app-accent-soft: rgba(0, 131, 143, 0.05);
+  --app-accent-medium: rgba(0, 131, 143, 0.1);
+  --app-accent-strong: rgba(0, 131, 143, 0.18);
+  --app-text-primary: #1a202c;
+  --app-text-secondary: #4a5568;
+  --app-text-muted: #718096;
+  --app-card-border: #e2e8f0;
+  --app-logo-gradient: linear-gradient(135deg, #00838f, #0097a7);
+  --app-menu-icon: #718096;
+  --app-menu-icon-active: #00838f;
+  --app-menu-selected-bg: rgba(0, 131, 143, 0.08);
+  --app-toggle-bg: #ffffff;
+  --app-toggle-border: #d5dce6;
+  --app-avatar-gradient: linear-gradient(135deg, #00838f, #0097a7);
+  --app-badge-hover: rgba(0, 131, 143, 0.06);
+  --app-chart-tooltip-bg: #ffffff;
+  --app-chart-tooltip-border: #e2e8f0;
+  --app-chart-tooltip-text: #4a5568;
+  --app-chart-axis-line: #e2e8f0;
+  --app-chart-axis-label: #718096;
+  --app-chart-split-line: #edf2f7;
+  --app-stat-shadow: rgba(0, 0, 0, 0.06);
+  --app-scrollbar-thumb: rgba(0, 131, 143, 0.25);
+  --app-scrollbar-thumb-hover: rgba(0, 131, 143, 0.4);
+  --app-scrollbar-track: #f0f4f8;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-track {
+  background: var(--app-scrollbar-track);
+}
+
+/* Telecom glow effects */
+.telecom-glow {
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.1), 0 0 60px rgba(0, 229, 255, 0.05);
+}
+
+.fiber-line {
+  background: var(--telecom-fiber);
+  background-size: 300% 300%;
+  animation: fiberFlow 4s ease infinite;
+  height: 2px;
+}
+
+@keyframes fiberFlow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes signalWave {
+  0% { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+.animate-pulse { animation: pulse 2s ease-in-out infinite; }
+.animate-float { animation: float 6s ease-in-out infinite; }
+
+/* Override browser autofill background */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+textarea:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  -webkit-text-fill-color: #e0f7fa !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+  background-color: transparent !important;
+}
+html:not(.dark) input:-webkit-autofill,
+html:not(.dark) input:-webkit-autofill:hover,
+html:not(.dark) input:-webkit-autofill:focus,
+html:not(.dark) input:-webkit-autofill:active,
+html:not(.dark) textarea:-webkit-autofill,
+html:not(.dark) textarea:-webkit-autofill:hover,
+html:not(.dark) textarea:-webkit-autofill:focus,
+html:not(.dark) textarea:-webkit-autofill:active {
+  -webkit-text-fill-color: #1a202c !important;
+}
+
