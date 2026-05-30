@@ -420,8 +420,6 @@ function startMonitoring() {
     wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + token
   }
 
-  console.log('Connecting to WebSocket:', wsUrl.split('?')[0] + '?token=***')
-
   try {
     ws = new WebSocket(wsUrl)
     ws.onopen = () => {

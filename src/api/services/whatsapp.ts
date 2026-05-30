@@ -1,9 +1,6 @@
 import http from '../http'
 
 export const whatsappApi = {
-  // Config
-  getConfig: () => http.get('/whatsapp/config'),
-  updateConfig: (data: Record<string, any>) => http.put('/whatsapp/config', data),
   // Session (Baileys)
   startSession: () => http.post('/whatsapp/sessions/start'),
   getStatus: () => http.get('/whatsapp/sessions/status'),

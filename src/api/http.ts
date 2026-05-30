@@ -105,7 +105,6 @@ http.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${token}`
           return http(originalRequest)
         }).catch(err => {
-          console.log('Failed to retry request after token refresh', err)
           return Promise.reject(err)
         })
       }
