@@ -27,6 +27,7 @@ let qrPollTimer: ReturnType<typeof setInterval> | null = null
 let qrTimeoutTimer: ReturnType<typeof setTimeout> | null = null
 let qrCountdownTimer: ReturnType<typeof setInterval> | null = null
 let pollingTenantId: string | null = null
+let qrPollErrorCount = 0
 const QR_TIMEOUT_MS = 120000
 
 function startQRPolling() {
@@ -44,7 +45,7 @@ function startQRPolling() {
     qrTimeoutSeconds.value = Math.max(0, qrTimeoutSeconds.value - 1)
   }, 1000)
 
-  // Hard timeout: stop polling after 30s if not connected
+  // Hard timeout: stop polling after QR_TIMEOUT_MS if not connected
   qrTimeoutTimer = setTimeout(async () => {
     if (sessionStatus.value.status !== 'connected') {
       message.warning('QR code kedaluwarsa. Silakan klik "Mulai Sesi" untuk mencoba lagi.')
@@ -64,18 +65,29 @@ function startQRPolling() {
     try {
       const res = await whatsappApi.getQR()
       const d = res.data?.data || res.data || {}
+      qrPollErrorCount = 0
+      // Always sync status so UI reflects reconnecting/connecting transitions
+      if (d.status) sessionStatus.value = d
       if (d.qr) {
         qrData.value = d.qr
-        sessionStatus.value = d
+      } else if (!d.qr && qrData.value) {
+        qrData.value = '' // Clear stale QR if status changed away from qr
       }
       if (d.status === 'connected') {
         stopQRPolling()
         qrData.value = ''
-        sessionStatus.value = d
         message.success('WhatsApp terhubung!')
       }
+      if (d.status === 'disconnected' || d.status === 'not_found') {
+        stopQRPolling()
+        qrData.value = ''
+      }
     } catch {
-      stopQRPolling()
+      qrPollErrorCount++
+      // Stop polling only after 3 consecutive errors (tolerates transient failures)
+      if (qrPollErrorCount >= 3) {
+        stopQRPolling()
+      }
     }
   }, 5000)
 }
@@ -86,6 +98,7 @@ function stopQRPolling() {
   if (qrCountdownTimer) { clearInterval(qrCountdownTimer); qrCountdownTimer = null }
   pollingTenantId = null
   qrTimeoutSeconds.value = 0
+  qrPollErrorCount = 0
 }
 
 onUnmounted(() => { stopQRPolling() })
@@ -96,7 +109,7 @@ async function loadSession() {
     const res = await whatsappApi.getStatus()
     sessionStatus.value = res.data?.data || res.data || {}
     const s = sessionStatus.value.status
-    if (s === 'qr' || s === 'connecting') {
+    if (s === 'qr' || s === 'connecting' || s === 'reconnecting') {
       refreshQR()
       startQRPolling()
     }
@@ -106,15 +119,19 @@ async function loadSession() {
 
 async function handleStartSession() {
   sessionLoading.value = true
+  qrData.value = ''
   try {
-    await whatsappApi.startSession()
+    const startRes = await whatsappApi.startSession()
+    const sd = startRes.data?.data || startRes.data || {}
+    // Reflect connecting state immediately so the QR loading spinner shows right away
+    sessionStatus.value = sd.status ? sd : { status: 'connecting' }
     message.success('Sesi dimulai, tunggu QR code...')
     setTimeout(async () => {
       try {
         const res = await whatsappApi.getQR()
         const d = res.data?.data || res.data || {}
         qrData.value = d.qr || ''
-        sessionStatus.value = d
+        if (d.status) sessionStatus.value = d
         startQRPolling()
       } catch {}
       sessionLoading.value = false
@@ -206,8 +223,12 @@ onMounted(() => {
                 </div>
               </n-space>
             </n-alert>
+            <n-alert v-else-if="sessionStatus.status === 'reconnecting'" type="warning" title="Menghubungkan Ulang...">
+              Koneksi terputus, sedang mencoba menghubungkan kembali secara otomatis. QR code akan muncul jika diperlukan.
+            </n-alert>
             <n-alert v-else-if="sessionStatus.status === 'connecting'" type="warning" title="Menghubungkan...">
-              Sedang menghubungkan, silakan scan QR code.
+              Sedang terhubung ke WhatsApp. QR code akan muncul dalam beberapa saat.
+              Jika QR tidak muncul lebih dari 2 menit, hentikan sesi lalu mulai ulang.
             </n-alert>
             <n-alert v-else-if="sessionStatus.message && sessionStatus.message.includes('tidak tersedia')" type="warning" title="WhatsApp Belum Aktif">
               Layanan WhatsApp saat ini belum aktif. Silakan hubungi administrator untuk mengaktifkan layanan WhatsApp, kemudian klik <b>Cek Status</b>.
@@ -224,6 +245,11 @@ onMounted(() => {
                   QR kedaluwarsa dalam <b>{{ qrTimeoutSeconds }}</b> detik
                 </p>
                 <n-button size="small" @click="refreshQR">Refresh QR</n-button>
+              </n-space>
+              <n-space v-else-if="sessionStatus.status === 'connecting' || sessionStatus.status === 'reconnecting'" vertical align="center" :size="8" style="padding: 16px 0">
+                <n-spin size="medium" />
+                <p style="color:#888;font-size:13px;margin:0">Memuat QR code...</p>
+                <p style="color:#aaa;font-size:12px;margin:0;text-align:center">Jika tidak muncul dalam 2 menit, klik <b>Hentikan Sesi</b> lalu mulai ulang.</p>
               </n-space>
             </n-spin>
 
@@ -276,13 +302,29 @@ onMounted(() => {
             </n-descriptions>
           </template>
 
-          <!-- Connecting / QR -->
-          <template v-else-if="sessionStatus.status === 'connecting' || sessionStatus.status === 'qr'">
+          <!-- Connecting (waiting for QR to be generated) -->
+          <template v-else-if="sessionStatus.status === 'connecting'">
             <n-alert type="warning" :show-icon="true">
               <template #header>
-                <span style="font-size:15px;font-weight:600">Menunggu Koneksi</span>
+                <span style="font-size:15px;font-weight:600">Menghubungkan...</span>
               </template>
-              Sesi sedang disiapkan. Silakan scan QR code untuk menghubungkan.
+              Sedang terhubung ke server WhatsApp. QR code akan muncul dalam beberapa saat.
+              Jika tidak muncul dalam 2 menit, hentikan sesi dan mulai ulang.
+            </n-alert>
+            <n-descriptions bordered :column="1" label-placement="left" size="small">
+              <n-descriptions-item label="Status">
+                <n-tag type="warning" size="small">Menghubungkan</n-tag>
+              </n-descriptions-item>
+            </n-descriptions>
+          </template>
+
+          <!-- QR (QR ready, waiting for scan) -->
+          <template v-else-if="sessionStatus.status === 'qr'">
+            <n-alert type="warning" :show-icon="true">
+              <template #header>
+                <span style="font-size:15px;font-weight:600">Menunggu Scan QR</span>
+              </template>
+              QR code siap. Silakan scan dengan WhatsApp di ponsel Anda.
             </n-alert>
             <n-descriptions bordered :column="1" label-placement="left" size="small">
               <n-descriptions-item label="Status">

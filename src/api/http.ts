@@ -135,6 +135,17 @@ http.interceptors.response.use(
         isRefreshing = false
       }
     }
+    if (error.response?.status === 402) {
+      const data = error.response.data
+      if (data?.code === 'subscription_expired') {
+        const currentPath = router.currentRoute.value.path
+        if (currentPath !== '/isolasi') {
+          sessionStorage.setItem('sub_expired_data', JSON.stringify(data))
+          router.replace('/isolasi')
+        }
+        return Promise.reject(error)
+      }
+    }
     return Promise.reject(error)
   }
 )

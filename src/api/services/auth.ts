@@ -3,8 +3,12 @@ import http from '../http'
 export const authApi = {
   login: (data: { email: string; password: string; tenant_id?: string }) =>
     http.post('/auth/login', data),
-  register: (data: { name: string; email: string; password: string; phone?: string }) =>
+  register: (data: { name: string; email: string; password: string; phone: string; fingerprint: string; otp: string }) =>
     http.post('/auth/register', data),
+  sendRegisterOTP: (data: { email: string; phone: string }) =>
+    http.post('/auth/register/send-otp', data),
+  listPlans: () => http.get('/auth/plans'),
+  selectPlan: (data: { plan_slug: string }) => http.post('/auth/select-plan', data),
   me: () => http.get('/auth/me'),
   updateProfile: (data: { name: string; email: string; phone?: string }) =>
     http.put('/auth/me', data),

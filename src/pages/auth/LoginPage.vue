@@ -47,13 +47,6 @@ const features = [
   { icon: 'chart', title: 'Real-time Analytics', desc: 'Monitoring bandwidth, trafik & performa jaringan' },
 ]
 
-const stats = [
-  { value: '99.9%', label: 'Uptime' },
-  { value: '10K+', label: 'Pelanggan' },
-  { value: '<1ms', label: 'Latency' },
-  { value: '24/7', label: 'Monitoring' },
-]
-
 async function handleLogin() {
   if (!form.value.email || !form.value.password) {
     message.warning('Email dan password wajib diisi')
@@ -273,14 +266,6 @@ async function resetPassword() {
                 <span class="feature-title">{{ f.title }}</span>
                 <span class="feature-desc">{{ f.desc }}</span>
               </div>
-            </div>
-          </div>
-
-          <!-- Stats bar -->
-          <div class="hero-stats">
-            <div class="stat-item" v-for="(s, i) in stats" :key="i">
-              <span class="stat-value">{{ s.value }}</span>
-              <span class="stat-label">{{ s.label }}</span>
             </div>
           </div>
         </div>
@@ -634,39 +619,6 @@ async function resetPassword() {
   line-height: 1.3;
 }
 
-/* Stats bar */
-.hero-stats {
-  display: flex;
-  gap: 6px;
-  padding: 12px 16px;
-  background: rgba(0, 229, 255, 0.03);
-  border: 1px solid rgba(0, 229, 255, 0.08);
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-.stat-item {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  position: relative;
-}
-.stat-item + .stat-item::before {
-  content: '';
-  position: absolute;
-  left: -3px;
-  top: 15%;
-  bottom: 15%;
-  width: 1px;
-  background: rgba(0, 229, 255, 0.1);
-}
-.stat-value {
-  font-size: 16px;
-  font-weight: 800;
-  color: #00e5ff;
-  letter-spacing: -0.5px;
-}
 .stat-label {
   font-size: 11px;
   color: rgba(160, 190, 230, 0.4);
@@ -848,7 +800,6 @@ async function resetPassword() {
   .login-wrapper { height: auto; }
   .hero-brand { text-align: center; }
   .hero-title { font-size: 26px; }
-  .hero-stats { flex-wrap: wrap; }
   .stat-item + .stat-item::before { display: none; }
   .form-card { padding: 28px 22px 22px; }
 }
@@ -896,19 +847,6 @@ async function resetPassword() {
 }
 .light-mode .feature-desc {
   color: #718096;
-}
-.light-mode .hero-stats {
-  background: rgba(0, 131, 143, 0.04);
-  border-color: rgba(0, 131, 143, 0.12);
-}
-.light-mode .stat-value {
-  color: #00838f;
-}
-.light-mode .stat-label {
-  color: #718096;
-}
-.light-mode .stat-item + .stat-item::before {
-  background: rgba(0, 131, 143, 0.12);
 }
 .light-mode .form-card {
   background: rgba(255, 255, 255, 0.92);

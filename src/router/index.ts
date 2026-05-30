@@ -25,6 +25,18 @@ const routes: RouteRecordRaw[] = [
     meta: { guest: true },
   },
   {
+    path: '/pending-approval',
+    name: 'pending-approval',
+    component: () => import('../pages/auth/PendingApprovalPage.vue'),
+    meta: { guest: true },
+  },
+  {
+    path: '/select-plan',
+    name: 'select-plan',
+    component: () => import('../pages/auth/SelectPlanPage.vue'),
+    meta: { auth: true, staff: true }, // Needs auth, but shouldn't be blocked by plan check
+  },
+  {
     path: '/portal/login/:slug',
     name: 'portal-login',
     component: () => import('../pages/portal/PortalLoginPage.vue'),
@@ -55,6 +67,9 @@ const routes: RouteRecordRaw[] = [
       { path: '', name: 'sa-dashboard', component: () => import('../pages/superadmin/SaDashboard.vue') },
       { path: 'tenants', name: 'sa-tenants', component: () => import('../pages/superadmin/SaTenantList.vue') },
       { path: 'tenants/:id', name: 'sa-tenant-detail', component: () => import('../pages/superadmin/SaTenantDetail.vue') },
+      { path: 'subscription-products', name: 'sa-subscription-products', component: () => import('../pages/superadmin/SaSubscriptionProducts.vue') },
+      { path: 'subscription-reminders', name: 'sa-subscription-reminders', component: () => import('../pages/superadmin/SaSubscriptionReminders.vue') },
+      { path: 'settings', name: 'sa-settings', component: () => import('../pages/superadmin/SaSettings.vue') },
     ],
   },
 
@@ -72,6 +87,14 @@ const routes: RouteRecordRaw[] = [
       { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('../pages/portal/PortalTicketDetail.vue') },
       { path: 'profile', name: 'portal-profile', component: () => import('../pages/portal/PortalProfile.vue') },
     ],
+  },
+
+  // ─── Subscription Isolation Page ───
+  {
+    path: '/isolasi',
+    name: 'isolasi',
+    component: () => import('../pages/subscription/IsolationPage.vue'),
+    meta: { auth: true },
   },
 
   // ─── Staff Panel ───
@@ -227,7 +250,7 @@ router.beforeEach(async (to, _from, next) => {
     }
 
     // Permission-based route guard for staff
-    const publicStaffRoutes = ['dashboard', 'profile', 'settings', 'subscription']
+    const publicStaffRoutes = ['dashboard', 'profile', 'settings', 'subscription', 'select-plan']
     if (isStaffRoute && isStaffRole && to.name && !publicStaffRoutes.includes(to.name as string)) {
       const { usePermission } = await import('../composables/usePermission')
       const { canAccessRoute } = usePermission()
@@ -236,16 +259,27 @@ router.beforeEach(async (to, _from, next) => {
       }
     }
 
-    // Subscription guard — redirect staff without active plan
-    if (isStaffRole && to.name !== 'subscription') {
+    // Force plan selection for new staff/owners
+    if (isStaffRole && to.name !== 'select-plan') {
+      const u = authStore.user as any
+      const plan = (u?.plan || '').toLowerCase().trim()
+      if (plan === '') {
+        return next('/select-plan')
+      }
+    }
+
+    // Subscription guard — redirect to isolation page only when subscription is expired.
+    // Logic mirrors backend isExpired():
+    //   - No plan_expires_at → always active (trial/free/gratis/etc.)
+    //   - plan_expires_at in the past AND plan not free/gratis → expired → isolasi
+    if (isStaffRole && to.name !== 'subscription' && to.name !== 'isolasi' && to.name !== 'select-plan') {
       const u = authStore.user as any
       const plan = (u?.plan || '').toLowerCase().trim()
       const expiresAt = u?.plan_expires_at
-      // Free plan has no expiry — always active
-      const isFreePlan = plan === 'gratis' || plan === 'free'
-      const hasActivePlan = plan && expiresAt && new Date(expiresAt) > new Date()
-      if (!plan || (!isFreePlan && !hasActivePlan)) {
-        return next('/subscription')
+      const isFreeplan = plan === 'gratis' || plan === 'free' || plan === 'trial' || plan === ''
+      const isExpired = !isFreeplan && expiresAt && new Date(expiresAt) < new Date()
+      if (isExpired) {
+        return next('/isolasi')
       }
     }
   }

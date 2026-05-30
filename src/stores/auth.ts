@@ -101,6 +101,13 @@ export const useAuthStore = defineStore('auth', () => {
     clearAuthSession()
   }
 
+  function setAuth(data: any) {
+    persistAuthSession(data)
+    user.value = data.user
+    saveCachedUser(data.user)
+    if (data.user?.tenant_id) persistTenantId(data.user.tenant_id)
+  }
+
   const role = computed(() => user.value?.role || '')
   const isSuperAdmin = computed(() => role.value === 'superadmin')
   const isCustomer = computed(() => role.value === 'customer')
@@ -121,5 +128,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, isAuthenticated, tenantId, role, isSuperAdmin, isCustomer, isStaff, login, fetchUser, logout, init }
+  return { user, isAuthenticated, tenantId, role, isSuperAdmin, isCustomer, isStaff, login, fetchUser, logout, init, setAuth }
 })

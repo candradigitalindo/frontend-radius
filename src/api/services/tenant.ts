@@ -9,6 +9,9 @@ export const tenantApi = {
   list: () => http.get('/tenants'),
   create: (data: Record<string, any>) => http.post('/tenants', data),
   getById: (id: string) => http.get(`/tenants/${id}`),
+  adminUpdate: (id: string, data: Record<string, any>) => http.put(`/tenants/${id}`, data),
+  resetPassword: (id: string) => http.post(`/tenants/${id}/reset-password`),
+  approve: (id: string) => http.post(`/tenants/${id}/approve`),
 }
 
 export const reminderApi = {

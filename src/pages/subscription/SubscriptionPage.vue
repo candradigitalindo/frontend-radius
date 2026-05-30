@@ -63,12 +63,12 @@ function originalYearlyPrice(plan: any) {
 }
 
 function discountedYearlyPrice(plan: any) {
-  return Math.floor(plan.price * 12 * 90 / 100).toLocaleString('id-ID')
+  return Math.floor(plan.price * 12 * 80 / 100).toLocaleString('id-ID')
 }
 
 function monthlyEquivalent(plan: any) {
   if (plan.price === 0) return ''
-  const yearly = Math.floor(plan.price * 12 * 90 / 100)
+  const yearly = Math.floor(plan.price * 12 * 80 / 100)
   const monthly = Math.floor(yearly / 12)
   return 'Rp ' + monthly.toLocaleString('id-ID') + '/bulan'
 }
@@ -107,7 +107,7 @@ async function handleSubscribe(plan: any) {
 
   const action = plan.price === 0 ? 'mengaktifkan' : 'berlangganan'
   const duration = billingCycle.value === 'yearly' ? 12 : 1
-  const periodLabel = duration === 12 ? ' (Tahunan, diskon 10%)' : ''
+  const periodLabel = duration === 12 ? ' (Tahunan, diskon 20%)' : ''
   dialog.warning({
     title: 'Konfirmasi',
     content: `${action === 'mengaktifkan' ? 'Aktifkan' : 'Berlangganan'} paket ${plan.name}${periodLabel}?`,
@@ -232,7 +232,7 @@ onMounted(fetchData)
             <div class="toggle-knob" />
           </div>
           <span class="toggle-opt" :class="{ on: billingCycle === 'yearly' }" @click="billingCycle = 'yearly'">Tahunan</span>
-          <span v-if="billingCycle === 'yearly'" class="save-badge">Hemat 10%</span>
+          <span v-if="billingCycle === 'yearly'" class="save-badge">Hemat 20%</span>
         </div>
 
         <!-- Plan cards -->

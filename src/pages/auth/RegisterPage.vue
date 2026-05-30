@@ -3,20 +3,27 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { NForm, NFormItem, NInput, NButton, NA, NIcon, useMessage } from 'naive-ui'
 import { Rocket, World, Users as UsersIcon, Lock } from '@vicons/tabler'
+import FingerprintJS from '@fingerprintjs/fingerprintjs'
 import { authApi } from '../../api'
 import { useThemeStore } from '../../stores/theme'
+import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
 const message = useMessage()
 const themeStore = useThemeStore()
+const authStore = useAuthStore()
 const isDark = computed(() => themeStore.isDark)
 const loading = ref(false)
+const showOTP = ref(false)
+const otp = ref('')
+const sendingOTP = ref(false)
 
 const form = ref({
   name: '',
   email: '',
   password: '',
   phone: '',
+  fingerprint: '',
 })
 
 const benefits = [
@@ -33,22 +40,64 @@ const steps = [
   { num: '04', text: 'Mulai kelola pelanggan & billing' },
 ]
 
-async function handleRegister() {
-  if (!form.value.name || !form.value.email || !form.value.password) {
-    message.warning('Nama, email, dan password wajib diisi')
+async function handleSendOTP() {
+  if (!form.value.name || !form.value.email || !form.value.password || !form.value.phone) {
+    message.warning('Harap isi semua kolom untuk melanjutkan')
     return
   }
   if (form.value.password.length < 8) {
     message.warning('Password minimal 8 karakter')
     return
   }
+  
+  sendingOTP.value = true
+  try {
+    await authApi.sendRegisterOTP({ 
+      email: form.value.email, 
+      phone: form.value.phone 
+    })
+    message.success('Kode verifikasi telah dikirim ke WhatsApp Anda')
+    showOTP.value = true
+  } catch (e: any) {
+    message.error(e.response?.data?.error || 'Gagal mengirim kode verifikasi')
+  } finally {
+    sendingOTP.value = false
+  }
+}
+
+async function handleRegister() {
+  if (!otp.value) {
+    message.warning('Silakan masukkan kode OTP')
+    return
+  }
+  
   loading.value = true
   try {
-    await authApi.register(form.value)
-    message.success('Registrasi berhasil! Silakan login.')
-    router.push('/login')
+    // Get fingerprint
+    try {
+      const fp = await FingerprintJS.load()
+      const result = await fp.get()
+      form.value.fingerprint = result.visitorId
+    } catch (e) {
+      console.error('Failed to get fingerprint:', e)
+    }
+
+    const { data } = await authApi.register({
+      ...form.value,
+      otp: otp.value
+    })
+    
+    if (data.status === 'pending') {
+      message.success('Registrasi berhasil! Akun Anda sedang dalam peninjauan keamanan.')
+      router.push('/pending-approval')
+    } else {
+      // Auto-login for active accounts and go to plan selection
+      authStore.setAuth(data)
+      message.success('Registrasi berhasil! Silakan pilih paket layanan Anda.')
+      router.push('/select-plan')
+    }
   } catch (e: any) {
-    message.error(e.response?.data?.error || 'Registrasi gagal')
+    message.error(e.response?.data?.error || 'Verifikasi OTP gagal')
   } finally {
     loading.value = false
   }
@@ -109,21 +158,37 @@ async function handleRegister() {
               <p class="form-subtitle">Mulai kelola infrastruktur jaringan Anda</p>
             </div>
 
-            <n-form @submit.prevent="handleRegister" class="register-form">
+            <n-form @submit.prevent="handleRegister" class="register-form" v-if="!showOTP">
               <n-form-item label="Nama Lengkap">
                 <n-input v-model:value="form.name" placeholder="Nama lengkap" size="large" />
               </n-form-item>
               <n-form-item label="Email">
                 <n-input v-model:value="form.email" placeholder="admin@isp.com" size="large" />
               </n-form-item>
-              <n-form-item label="Telepon">
-                <n-input v-model:value="form.phone" placeholder="+628xxx (opsional)" size="large" />
+              <n-form-item label="Telepon (WhatsApp)">
+                <n-input v-model:value="form.phone" placeholder="Contoh: 081260268381" size="large" />
               </n-form-item>
               <n-form-item label="Password">
-                <n-input v-model:value="form.password" type="password" show-password-on="click" placeholder="Min. 8 karakter" size="large" @keyup.enter="handleRegister" />
+                <n-input v-model:value="form.password" type="password" show-password-on="click" placeholder="Min. 8 karakter" size="large" @keyup.enter="handleSendOTP" />
+              </n-form-item>
+              <n-button type="primary" block size="large" :loading="sendingOTP" @click="handleSendOTP" class="register-btn" style="margin-top: 8px; font-weight: 600; height: 44px;">
+                Lanjut ke Verifikasi
+              </n-button>
+            </n-form>
+
+            <n-form @submit.prevent="handleRegister" class="register-form" v-else>
+              <div style="text-align: center; margin-bottom: 20px">
+                <n-text depth="3" :style="{ color: isDark ? 'rgba(255,255,255,0.6)' : '#666' }">Masukkan 6 digit kode OTP yang dikirim ke</n-text><br/>
+                <n-text strong :style="{ color: isDark ? '#fff' : '#000' }">{{ form.phone }}</n-text>
+              </div>
+              <n-form-item label="Kode OTP">
+                <n-input v-model:value="otp" placeholder="6 digit angka" size="large" maxlength="6" style="text-align: center; letter-spacing: 8px; font-size: 18px" />
               </n-form-item>
               <n-button type="primary" block size="large" :loading="loading" @click="handleRegister" class="register-btn" style="margin-top: 8px; font-weight: 600; height: 44px;">
-                Daftar Sekarang
+                Verifikasi & Daftar
+              </n-button>
+              <n-button text block @click="showOTP = false" style="margin-top: 16px; color: #888">
+                ← Kembali
               </n-button>
             </n-form>
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import {
-  NForm, NFormItem, NButton,
+  NForm, NFormItem, NButton, NRadioGroup, NRadio, NText, NAlert,
   NTabs, NTabPane, NSelect,
   NSpin, useMessage,
 } from 'naive-ui'
@@ -12,6 +12,7 @@ const message = useMessage()
 const themeStore = useThemeStore()
 const loading = ref(true)
 const savingTheme = ref(false)
+const savingWA = ref(false)
 
 // Theme
 const theme = ref({ theme: 'dark', language: 'id' })
@@ -24,6 +25,25 @@ const langOptions = [
   { label: 'Bahasa Indonesia', value: 'id' },
   { label: 'English', value: 'en' },
 ]
+
+// WA Notification Sender
+const waSenderMode = ref('own')
+
+async function loadWASettings() {
+  try {
+    const { data } = await settingApi.get('wa_notification_sender')
+    waSenderMode.value = data.data?.value || 'own'
+  } catch { waSenderMode.value = 'own' }
+}
+
+async function saveWASettings() {
+  savingWA.value = true
+  try {
+    await settingApi.bulkSet({ wa_notification_sender: waSenderMode.value })
+    message.success('Pengaturan notifikasi WhatsApp disimpan')
+  } catch { message.error('Gagal menyimpan') }
+  savingWA.value = false
+}
 
 // --- Load ---
 async function loadTheme() {
@@ -48,7 +68,7 @@ async function saveTheme() {
 }
 
 onMounted(async () => {
-  await loadTheme()
+  await Promise.all([loadTheme(), loadWASettings()])
   loading.value = false
 })
 </script>
@@ -82,6 +102,50 @@ onMounted(async () => {
             </div>
           </n-form>
         </n-tab-pane>
+
+        <!-- Notifikasi WhatsApp -->
+        <n-tab-pane name="wa-notif" tab="Notifikasi WhatsApp">
+          <p class="tab-desc">
+            Pilih nomor WhatsApp yang digunakan untuk mengirim notifikasi ke pelanggan Anda.
+          </p>
+
+          <n-form label-placement="top" style="max-width: 500px">
+            <n-form-item label="Pengirim Notifikasi WhatsApp">
+              <n-radio-group v-model:value="waSenderMode" style="display:flex;flex-direction:column;gap:12px">
+                <n-radio value="own">
+                  <div style="padding: 4px 0">
+                    <div style="font-weight: 600; margin-bottom: 2px">WhatsApp Sendiri</div>
+                    <n-text depth="3" style="font-size: 12px">
+                      Notifikasi dikirim dari nomor WhatsApp yang Anda konfigurasi di pengaturan WhatsApp tenant.
+                      Pastikan sesi WhatsApp Anda aktif.
+                    </n-text>
+                  </div>
+                </n-radio>
+                <n-radio value="superadmin">
+                  <div style="padding: 4px 0">
+                    <div style="font-weight: 600; margin-bottom: 2px">WhatsApp Platform (Superadmin)</div>
+                    <n-text depth="3" style="font-size: 12px">
+                      Notifikasi dikirim dari nomor WhatsApp platform yang dikelola oleh superadmin.
+                      Cocok jika Anda belum memiliki nomor WhatsApp sendiri.
+                    </n-text>
+                  </div>
+                </n-radio>
+              </n-radio-group>
+            </n-form-item>
+
+            <n-alert v-if="waSenderMode === 'own'" type="info" :bordered="false" style="margin-bottom: 16px; font-size: 13px">
+              Pastikan sesi WhatsApp Anda aktif di menu <strong>WhatsApp</strong> agar notifikasi terkirim.
+            </n-alert>
+            <n-alert v-else type="warning" :bordered="false" style="margin-bottom: 16px; font-size: 13px">
+              Notifikasi akan dikirim atas nama platform. Pesan tetap menggunakan template yang Anda atur.
+            </n-alert>
+
+            <div class="form-actions">
+              <n-button type="primary" :loading="savingWA" @click="saveWASettings">Simpan</n-button>
+            </div>
+          </n-form>
+        </n-tab-pane>
+
       </n-tabs>
     </div>
   </n-spin>

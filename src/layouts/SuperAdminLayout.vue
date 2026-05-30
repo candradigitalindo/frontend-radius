@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, ref, computed } from 'vue'
+import { h, ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NIcon, NAvatar, NDropdown, NSwitch, NSpace, NText, NTag } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
@@ -8,6 +8,10 @@ import {
   BusinessOutline as TenantIcon,
   MoonOutline as MoonIcon,
   SunnyOutline as SunIcon,
+  SettingsOutline as SettingsIcon,
+  CubeOutline as ProductIcon,
+  ChatbubblesOutline as ReminderIcon,
+  MenuOutline as MenuIcon,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
@@ -17,12 +21,36 @@ const route = useRoute()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const collapsed = ref(false)
+const isMobile = ref(false)
+const showMobileSidebar = ref(false)
+
+const MOBILE_BREAKPOINT = 768
+
+function checkMobile() {
+  const mobile = window.innerWidth < MOBILE_BREAKPOINT
+  isMobile.value = mobile
+  if (mobile) {
+    collapsed.value = false // Keep false for mobile drawer behavior
+  }
+}
+
+onMounted(() => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
+})
 
 const ri = (icon: any) => () => h(NIcon, null, { default: () => h(icon) })
 
 const menuOptions: MenuOption[] = [
   { label: 'Dashboard', key: 'sa-dashboard', icon: ri(DashboardIcon) },
   { label: 'Tenants', key: 'sa-tenants', icon: ri(TenantIcon) },
+  { label: 'Produk Subscribe', key: 'sa-subscription-products', icon: ri(ProductIcon) },
+  { label: 'Template Pengingat', key: 'sa-subscription-reminders', icon: ri(ReminderIcon) },
+  { label: 'Pengaturan', key: 'sa-settings', icon: ri(SettingsIcon) },
 ]
 
 const activeKey = computed(() => {
@@ -35,8 +63,12 @@ function onMenuSelect(key: string) {
   const map: Record<string, string> = {
     'sa-dashboard': '/superadmin',
     'sa-tenants': '/superadmin/tenants',
+    'sa-subscription-products': '/superadmin/subscription-products',
+    'sa-subscription-reminders': '/superadmin/subscription-reminders',
+    'sa-settings': '/superadmin/settings',
   }
   router.push(map[key] || '/superadmin')
+  if (isMobile.value) showMobileSidebar.value = false
 }
 
 const userDropdownOptions = [
@@ -54,16 +86,23 @@ function onUserAction(key: string) {
 
 <template>
   <n-layout has-sider style="height: 100vh">
+    <!-- Mobile overlay backdrop -->
+    <Transition name="fade-overlay">
+      <div v-if="isMobile && showMobileSidebar" class="mobile-overlay" @click="showMobileSidebar = false"></div>
+    </Transition>
+
     <n-layout-sider
-      :collapsed="collapsed"
+      v-show="!isMobile || showMobileSidebar"
+      :collapsed="isMobile ? false : collapsed"
       collapse-mode="width"
       :collapsed-width="64"
       :width="230"
-      show-trigger
+      :show-trigger="!isMobile"
       @collapse="collapsed = true"
       @expand="collapsed = false"
       :native-scrollbar="false"
-      class="sa-sider"
+      :class="['sa-sider', { 'mobile-sider': isMobile }]"
+      :position="isMobile ? 'absolute' : 'static'"
     >
       <div class="sider-logo">
         <svg viewBox="0 0 32 32" width="26" height="26" fill="none">
@@ -72,12 +111,12 @@ function onUserAction(key: string) {
           <circle cx="16" cy="16" r="2" fill="#ff1744"/>
         </svg>
         <transition name="fade">
-          <span v-if="!collapsed" class="logo-text">Super Admin</span>
+          <span v-if="isMobile || !collapsed" class="logo-text">Super Admin</span>
         </transition>
       </div>
       <div style="margin: 0 16px; height: 2px; background: linear-gradient(90deg, #ff1744, #7c4dff, #ff1744); background-size: 300% 300%; animation: fiberFlow 4s ease infinite;"></div>
       <n-menu
-        :collapsed="collapsed"
+        :collapsed="isMobile ? false : collapsed"
         :collapsed-width="64"
         :collapsed-icon-size="20"
         :options="menuOptions"
@@ -88,9 +127,17 @@ function onUserAction(key: string) {
 
     <n-layout>
       <n-layout-header class="sa-header">
-        <n-text strong style="font-size: 15px">Super Admin Panel</n-text>
+        <div class="header-left">
+          <!-- Hamburger for mobile -->
+          <button v-if="isMobile" class="hamburger-btn" @click="showMobileSidebar = !showMobileSidebar" aria-label="Toggle menu">
+            <n-icon :component="MenuIcon" :size="24" />
+          </button>
+          <n-text strong style="font-size: 15px">Super Admin Panel</n-text>
+        </div>
+        
         <n-space align="center" :size="16">
           <n-tag
+            v-if="!isMobile"
             :bordered="false"
             size="small"
             round
@@ -114,13 +161,13 @@ function onUserAction(key: string) {
               <n-avatar round :size="32" class="user-avatar">
                 {{ authStore.user?.name?.charAt(0) || 'S' }}
               </n-avatar>
-              <span class="user-name">{{ authStore.user?.name || 'Admin' }}</span>
+              <span class="user-name" v-if="!isMobile">{{ authStore.user?.name || 'Admin' }}</span>
             </div>
           </n-dropdown>
         </n-space>
       </n-layout-header>
 
-      <n-layout-content content-style="padding: 24px" :native-scrollbar="false" class="sa-content">
+      <n-layout-content content-style="padding: 24px; max-width: 100%; overflow-x: hidden; box-sizing: border-box" :native-scrollbar="false" class="sa-content">
         <router-view />
       </n-layout-content>
     </n-layout>
@@ -161,6 +208,12 @@ function onUserAction(key: string) {
   background: rgba(26,10,14,0.6); backdrop-filter: blur(12px);
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .user-badge {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
   padding: 4px 10px 4px 4px; border-radius: 20px; transition: background 0.2s;
@@ -170,6 +223,51 @@ function onUserAction(key: string) {
 .user-name { font-size: 13px; font-weight: 500; color: #ffcdd2; }
 
 .sa-content { background: #120810; }
+
+/* ===== Mobile Sidebar ===== */
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 999;
+  backdrop-filter: blur(2px);
+}
+
+.mobile-sider {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 1000;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+}
+
+.hamburger-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,23,68,0.1);
+  color: #ff1744;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.hamburger-btn:hover {
+  background: rgba(255,23,68,0.15);
+}
+
+.fade-overlay-enter-active,
+.fade-overlay-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-overlay-enter-from,
+.fade-overlay-leave-to {
+  opacity: 0;
+}
 
 @keyframes fiberFlow {
   0% { background-position: 0% 50%; }
@@ -194,4 +292,13 @@ html:not(.dark) .sa-header {
 html:not(.dark) .user-badge:hover { background: rgba(255,23,68,0.05); }
 html:not(.dark) .user-name { color: #4a5568; }
 html:not(.dark) .sa-content { background: #f0f4f8; }
+
+@media (max-width: 640px) {
+  .sa-header {
+    padding: 0 12px;
+  }
+  .user-name {
+    display: none;
+  }
+}
 </style>

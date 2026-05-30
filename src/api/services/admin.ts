@@ -18,4 +18,25 @@ export const adminApi = {
 
   // Rolling 6-month subscription revenue
   subscriptionRevenue: () => http.get('/admin/revenue/subscription'),
+
+  // SuperAdmin Settings
+  getSettings: () => http.get('/admin/settings'),
+  updateSettings: (data: Record<string, any>) => http.put('/admin/settings', data),
+  testPG: () => http.post('/admin/settings/test-pg'),
+
+  // SuperAdmin WhatsApp Session (dedicated endpoints)
+  waStartSession: () => http.post('/admin/wa/start'),
+  waGetStatus: () => http.get('/admin/wa/status'),
+  waGetQR: () => http.get('/admin/wa/qr'),
+  waStopSession: () => http.delete('/admin/wa/stop'),
+
+  // Subscription Plan management
+  listSubscriptionPlans: () => http.get('/admin/subscription/plans'),
+  createSubscriptionPlan: (data: Record<string, any>) => http.post('/admin/subscription/plans', data),
+  updateSubscriptionPlan: (id: string, data: Record<string, any>) => http.put(`/admin/subscription/plans/${id}`, data),
+  deleteSubscriptionPlan: (id: string) => http.delete(`/admin/subscription/plans/${id}`),
+
+  // Subscription Reminder template management
+  listSubscriptionReminders: () => http.get('/admin/subscription/reminders'),
+  updateSubscriptionReminder: (id: string, data: Record<string, any>) => http.put(`/admin/subscription/reminders/${id}`, data),
 }

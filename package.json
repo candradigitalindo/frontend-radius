@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fingerprintjs/fingerprintjs": "^5.2.0",
     "@vicons/ionicons5": "^0.13.0",
     "@vicons/tabler": "^0.13.0",
     "axios": "^1.13.6",

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import { NCard, NSpin, NText, NIcon } from 'naive-ui'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { NCard, NSpin, NText, NIcon, NSpace, NTag } from 'naive-ui'
 import { Building, Users, Wifi, CurrencyDollar } from '@vicons/tabler'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -17,6 +17,12 @@ const loading = ref(true)
 const stats = ref<any>({})
 const revenueData = ref<any[]>([])
 const subRevenueData = ref<any[]>([])
+const isMobile = ref(false)
+
+const MOBILE_BREAKPOINT = 768
+function checkMobile() {
+  isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
+}
 
 const formatRupiah = (v: number) => {
   if (!v) return '0'
@@ -28,6 +34,8 @@ const formatRupiah = (v: number) => {
 const formatFullRupiah = (v: number) => 'Rp ' + (v || 0).toLocaleString('id-ID')
 
 onMounted(async () => {
+  checkMobile()
+  window.addEventListener('resize', checkMobile)
   try {
     const [d, r, s] = await Promise.all([
       adminApi.dashboard(),
@@ -39,6 +47,10 @@ onMounted(async () => {
     subRevenueData.value = s.data?.data || []
   } catch { /* ignore */ }
   loading.value = false
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkMobile)
 })
 
 const statCards = computed(() => {
@@ -247,7 +259,7 @@ const tenantStats = computed(() => stats.value?.tenant_stats || [])
               </div>
               <div>
                 <n-text style="font-size: 13px; font-weight: 600">Pendapatan Global</n-text>
-                <n-text depth="3" style="font-size: 11px; display: block">Revenue vs Pengeluaran — 6 bulan terakhir (semua tenant)</n-text>
+                <n-text depth="3" style="font-size: 11px; display: block">Revenue vs Pengeluaran — 6 bulan terakhir</n-text>
               </div>
             </div>
           </template>
@@ -285,12 +297,12 @@ const tenantStats = computed(() => stats.value?.tenant_stats || [])
           </div>
         </template>
         <div v-if="tenantStats.length === 0" style="text-align: center; color: #999; padding: 32px">Belum ada tenant</div>
-        <div v-for="t in tenantStats.slice(0, 10)" :key="t.tenant_id" style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(128,128,128,0.1)">
-          <div>
+        <div v-for="t in tenantStats.slice(0, 10)" :key="t.tenant_id" class="tenant-row">
+          <div class="tenant-info">
             <strong>{{ t.tenant_name }}</strong>
-            <div style="font-size: 12px; opacity: 0.5">{{ t.slug }} · {{ t.plan }}</div>
+            <div class="tenant-meta">{{ t.slug }} · {{ t.plan }}</div>
           </div>
-          <div style="display: flex; gap: 16px; font-size: 12px; opacity: 0.6">
+          <div class="tenant-stats">
             <span>{{ t.total_customers }} pelanggan</span>
             <span>{{ t.total_routers }} router</span>
             <span :style="{ color: t.is_active ? '#22c55e' : '#ef4444' }">{{ t.is_active ? 'Aktif' : 'Nonaktif' }}</span>
@@ -451,6 +463,26 @@ const tenantStats = computed(() => stats.value?.tenant_stats || [])
   color: #60a5fa;
 }
 
+.tenant-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(128,128,128,0.1);
+}
+
+.tenant-meta {
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.tenant-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
 @media (max-width: 1024px) {
   .stat-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -477,6 +509,15 @@ const tenantStats = computed(() => stats.value?.tenant_stats || [])
   }
   .stat-value {
     font-size: 17px;
+  }
+  .tenant-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .tenant-stats {
+    gap: 12px;
+    flex-wrap: wrap;
   }
 }
 </style>
