@@ -348,6 +348,20 @@ async function deleteReminder(id: string) {
   } catch { message.error('Gagal menghapus') }
 }
 
+const reminderSendSummary = computed(() => {
+  const { type, days_offset } = reminderForm.value
+  if (type === 'before_due') {
+    if (!days_offset || days_offset === 0) return 'WA dikirim tepat pada hari jatuh tempo'
+    return `WA dikirim ${days_offset} hari sebelum jatuh tempo (H-${days_offset})`
+  }
+  if (type === 'on_due') return 'WA dikirim tepat pada hari jatuh tempo (H+0)'
+  if (type === 'after_due') {
+    if (!days_offset || days_offset === 0) return 'WA dikirim tepat pada hari jatuh tempo'
+    return `WA dikirim ${days_offset} hari setelah jatuh tempo (H+${days_offset}) — pengingat keterlambatan`
+  }
+  return ''
+})
+
 async function triggerReminders() {
   try {
     const { data } = await reminderApi.trigger()
@@ -913,42 +927,66 @@ async function setDefaultBP(id: string) {
         <!-- Left Column: Form Fields -->
         <n-grid-item>
           <n-form label-placement="top">
+
+            <!-- Preview dinamis kapan WA dikirim -->
+            <div class="reminder-send-preview">
+              <div class="rsp-icon">📅</div>
+              <div class="rsp-text">{{ reminderSendSummary }}</div>
+            </div>
+
             <n-form-item>
               <template #label>
-                <div style="display: flex; align-items: center; gap: 6px">
-                  <n-icon :component="Tag" :size="14" />
-                  <span>Nama</span>
+                <div class="field-label-row">
+                  <span class="field-label-main">Nama Pengingat</span>
+                  <span class="field-label-hint">Label internal, tidak dikirim ke pelanggan</span>
                 </div>
               </template>
-              <n-input v-model:value="reminderForm.name" placeholder="Reminder H-3" />
+              <n-input v-model:value="reminderForm.name" placeholder="Contoh: H-3 Jatuh Tempo" />
             </n-form-item>
-            
+
             <n-form-item>
               <template #label>
-                <div style="display: flex; align-items: center; gap: 6px">
-                  <n-icon :component="Calendar" :size="14" />
-                  <span>Tipe</span>
+                <div class="field-label-row">
+                  <span class="field-label-main">Kapan dikirim?</span>
+                  <span class="field-label-hint">Posisi pengiriman relatif terhadap tanggal jatuh tempo</span>
                 </div>
               </template>
               <n-select v-model:value="reminderForm.type" :options="reminderTypeOptions" />
             </n-form-item>
-            
-            <n-form-item label="Offset (hari)">
-              <n-input-number v-model:value="reminderForm.days_offset" :min="0" :max="30" style="width: 100%" :disabled="reminderForm.type === 'on_due'" />
-            </n-form-item>
-            
-            <n-form-item>
+
+            <n-form-item v-if="reminderForm.type !== 'on_due'">
               <template #label>
-                <div style="display: flex; align-items: center; gap: 6px">
-                  <n-icon :component="FileText" :size="14" />
-                  <span>Agenda</span>
+                <div class="field-label-row">
+                  <span class="field-label-main">
+                    {{ reminderForm.type === 'before_due' ? 'Berapa hari sebelum JT?' : 'Berapa hari setelah JT?' }}
+                  </span>
+                  <span class="field-label-hint">
+                    {{ reminderForm.type === 'before_due'
+                      ? 'Misal 3 = WA dikirim 3 hari sebelum tagihan jatuh tempo'
+                      : 'Misal 2 = WA pengingat telat dikirim 2 hari setelah JT terlewat' }}
+                  </span>
                 </div>
               </template>
-              <n-input v-model:value="reminderForm.agenda" placeholder="Pengingat jatuh tempo" />
+              <n-input-number v-model:value="reminderForm.days_offset" :min="1" :max="30" style="width: 100%" />
             </n-form-item>
-            
-            <n-form-item label="Aktif">
-              <n-switch v-model:value="reminderForm.is_active" />
+
+            <n-form-item>
+              <template #label>
+                <div class="field-label-row">
+                  <span class="field-label-main">Catatan Internal</span>
+                  <span class="field-label-hint">Opsional — keterangan untuk admin, tidak muncul di WA</span>
+                </div>
+              </template>
+              <n-input v-model:value="reminderForm.agenda" placeholder="Contoh: Pengingat rutin sebelum JT" />
+            </n-form-item>
+
+            <n-form-item label="Status">
+              <n-space align="center" :size="10">
+                <n-switch v-model:value="reminderForm.is_active" />
+                <n-text depth="3" style="font-size: 12px">
+                  {{ reminderForm.is_active ? 'Aktif — cronjob akan mengirim ini' : 'Nonaktif — cronjob melewati aturan ini' }}
+                </n-text>
+              </n-space>
             </n-form-item>
           </n-form>
         </n-grid-item>
@@ -1389,6 +1427,35 @@ async function setDefaultBP(id: string) {
   font-size: 12px;
   opacity: 0.5;
 }
+
+/* ── Reminder Send Preview ────────── */
+.reminder-send-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(59, 130, 246, 0.07);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+:root.dark .reminder-send-preview {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+.rsp-icon { font-size: 18px; flex-shrink: 0; }
+.rsp-text { font-size: 13px; font-weight: 600; color: #3b82f6; line-height: 1.4; }
+:root.dark .rsp-text { color: #60a5fa; }
+
+/* ── Field label with hint ─────────── */
+.field-label-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 2px;
+}
+.field-label-main { font-size: 13px; font-weight: 600; }
+.field-label-hint { font-size: 11px; opacity: 0.45; line-height: 1.4; }
 
 /* ── Billing Profiles ──────────────── */
 .bp-list {
