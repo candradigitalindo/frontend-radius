@@ -39,4 +39,7 @@ export const adminApi = {
   // Subscription Reminder template management
   listSubscriptionReminders: () => http.get('/admin/subscription/reminders'),
   updateSubscriptionReminder: (id: string, data: Record<string, any>) => http.put(`/admin/subscription/reminders/${id}`, data),
+
+  // Webhook URLs for subscription payment gateway
+  getWebhookUrls: () => http.get('/admin/webhook-urls'),
 }

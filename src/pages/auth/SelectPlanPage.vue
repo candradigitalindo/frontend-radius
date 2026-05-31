@@ -15,8 +15,9 @@ const authStore = useAuthStore()
 
 const isDark = computed(() => themeStore.isDark)
 const loading = ref(true)
-const saving = ref(false)
-const plans = ref<any[]>([])
+const saving  = ref(false)
+const plans   = ref<any[]>([])
+const billingCycle = ref<'monthly' | 'yearly'>('monthly')
 
 async function fetchPlans() {
   loading.value = true
@@ -53,6 +54,17 @@ function formatPrice(price: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(price)
 }
 
+// Yearly pricing — mirrors backend formula: price * 12 * 80 / 100
+function yearlyOrig(price: number)   { return price * 12 }
+function yearlyDisc(price: number)   { return Math.floor(price * 12 * 80 / 100) }
+function monthlyEquiv(price: number) {
+  const monthly = Math.floor(yearlyDisc(price) / 12)
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(monthly)
+}
+function formatRp(n: number) {
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(n)
+}
+
 onMounted(() => {
   fetchPlans()
 })
@@ -70,16 +82,39 @@ onMounted(() => {
         <n-spin size="large" />
       </div>
 
-      <div v-else class="plans-grid">
+      <!-- Billing cycle toggle -->
+      <div v-else class="billing-toggle">
+        <span :class="['toggle-opt', billingCycle === 'monthly' && 'on']" @click="billingCycle = 'monthly'">Bulanan</span>
+        <div :class="['toggle-track', billingCycle === 'yearly' && 'yearly']"
+             @click="billingCycle = billingCycle === 'monthly' ? 'yearly' : 'monthly'">
+          <div class="toggle-knob" />
+        </div>
+        <span :class="['toggle-opt', billingCycle === 'yearly' && 'on']" @click="billingCycle = 'yearly'">Tahunan</span>
+        <span v-if="billingCycle === 'yearly'" class="save-badge">Hemat 20%</span>
+      </div>
+
+      <div v-if="!loading" class="plans-grid">
         <n-card v-for="plan in plans" :key="plan.id" class="plan-card" :class="{'popular': plan.is_popular}">
           <template v-if="plan.is_popular" #header-extra>
             <n-tag type="warning" size="small" round>Paling Diminati</n-tag>
           </template>
           
           <h3 class="plan-name">{{ plan.name }}</h3>
-          <div class="plan-price">
+
+          <!-- Monthly price -->
+          <div v-if="billingCycle === 'monthly' || plan.price === 0" class="plan-price">
             <span class="amount">{{ formatPrice(plan.price) }}</span>
-            <span class="period" v-if="plan.price > 0">/ {{ plan.duration_months > 1 ? plan.duration_months + ' bln' : 'bulan' }}</span>
+            <span class="period" v-if="plan.price > 0">/bulan</span>
+          </div>
+
+          <!-- Yearly price (same formula as backend & SubscriptionPage) -->
+          <div v-else class="plan-price yearly-price">
+            <div class="yearly-orig">{{ formatRp(yearlyOrig(plan.price)) }}/thn</div>
+            <div class="yearly-row">
+              <span class="amount">{{ formatRp(yearlyDisc(plan.price)) }}</span>
+              <span class="period">/thn</span>
+            </div>
+            <div class="yearly-equiv">≈ {{ monthlyEquiv(plan.price) }}/bln</div>
           </div>
           
           <p class="plan-desc">{{ plan.description }}</p>
@@ -161,6 +196,43 @@ onMounted(() => {
 .light-mode .header-section p {
   color: #4a5568;
 }
+
+/* Billing toggle */
+.billing-toggle {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; margin-bottom: 32px;
+}
+.toggle-opt {
+  font-size: 14px; font-weight: 600; opacity: 0.4;
+  cursor: pointer; user-select: none; transition: opacity 0.15s;
+}
+.toggle-opt.on { opacity: 1; }
+.toggle-track {
+  position: relative; width: 44px; height: 24px;
+  border-radius: 12px; background: rgba(128,128,128,0.2);
+  cursor: pointer; transition: background 0.25s; flex-shrink: 0;
+}
+.toggle-track.yearly { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); }
+.toggle-knob {
+  position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; transition: transform 0.25s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.toggle-track.yearly .toggle-knob { transform: translateX(20px); }
+.save-badge {
+  font-size: 11px; font-weight: 700; padding: 3px 10px;
+  border-radius: 20px; background: linear-gradient(135deg, #22c55e, #16a34a);
+  color: #fff; white-space: nowrap;
+}
+
+/* Yearly price block */
+.yearly-price { flex-direction: column; align-items: center; gap: 2px; }
+.yearly-orig {
+  font-size: 13px; opacity: 0.35; text-decoration: line-through; width: 100%; text-align: center;
+}
+.yearly-row { display: flex; align-items: baseline; gap: 4px; }
+.yearly-equiv { font-size: 11px; opacity: 0.4; width: 100%; text-align: center; margin-top: 1px; }
 
 .plans-grid {
   display: grid;

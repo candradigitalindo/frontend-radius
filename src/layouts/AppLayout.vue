@@ -222,8 +222,10 @@ const roleColors: Record<string, string> = {
         </n-space>
       </n-layout-header>
 
-      <n-layout-content content-style="padding: 24px; max-width: 100%; overflow-x: hidden; box-sizing: border-box" :native-scrollbar="false" class="app-content">
-        <router-view />
+      <n-layout-content :native-scrollbar="false" class="app-content">
+        <div class="content-wrap">
+          <router-view />
+        </div>
       </n-layout-content>
     </n-layout>
   </n-layout>
@@ -397,6 +399,26 @@ const roleColors: Record<string, string> = {
   background: var(--app-bg);
 }
 
+.content-wrap {
+  padding: 24px;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  min-height: 100%;
+}
+
+@media (max-width: 768px) {
+  .content-wrap {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .content-wrap {
+    padding: 12px;
+  }
+}
+
 /* ===== Mobile Sidebar ===== */
 .mobile-overlay {
   position: fixed;
@@ -449,6 +471,23 @@ const roleColors: Record<string, string> = {
   }
   .app-header {
     padding: 0 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .app-header {
+    padding: 0 8px;
+    gap: 8px;
+  }
+  .header-left {
+    gap: 8px;
+    min-width: 0;
+  }
+  .header-left :deep(.n-text) {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 </style>

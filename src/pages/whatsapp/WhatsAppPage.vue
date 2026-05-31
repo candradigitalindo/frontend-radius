@@ -3,9 +3,10 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   NCard, NButton, NSpace, useMessage, NTag, NImage, NSpin,
   NModal, NAlert, NDescriptions, NDescriptionsItem,
+  NRadioGroup, NRadio, NText, NInput, NTabs, NTabPane,
   useDialog
 } from 'naive-ui'
-import { whatsappApi } from '../../api'
+import { whatsappApi, settingApi, reminderApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
 
 const message = useMessage()
@@ -200,9 +201,111 @@ window.addEventListener('resize', onResize)
 onUnmounted(() => window.removeEventListener('resize', onResize))
 const isMobile = computed(() => windowWidth.value < 640)
 
+// ─── Pengaturan Pengirim Notifikasi ───
+const waSenderMode = ref('own')
+const savingWA = ref(false)
+
+async function loadWASettings() {
+  try {
+    const { data } = await settingApi.get('wa_notification_sender')
+    waSenderMode.value = data.data?.value || 'own'
+  } catch { waSenderMode.value = 'own' }
+}
+
+async function saveWASettings() {
+  savingWA.value = true
+  try {
+    await settingApi.bulkSet({ wa_notification_sender: waSenderMode.value })
+    message.success('Pengaturan notifikasi WhatsApp disimpan')
+  } catch { message.error('Gagal menyimpan') }
+  savingWA.value = false
+}
+
+// ─── Template Notifikasi ───
+const DEFAULT_INVOICE_TPL = `{salam} {nama},
+
+Berikut informasi tagihan internet Anda:
+
+📋 *No. Invoice:* {nomor_invoice}
+📅 *Periode:* {periode}
+📦 *Paket:* {paket}
+💰 *Total Tagihan:* Rp{jumlah}
+⏰ *Jatuh Tempo:* {jatuh_tempo}
+
+Mohon segera lakukan pembayaran sebelum jatuh tempo untuk menghindari pemutusan layanan.
+
+Terima kasih. 🙏`
+
+const DEFAULT_PAYMENT_TPL = `{salam} {nama},
+
+Pembayaran Anda telah *berhasil* dikonfirmasi! ✅
+
+📋 *No. Invoice:* {nomor_invoice}
+📅 *Periode:* {periode}
+📦 *Paket:* {paket}
+💰 *Jumlah Bayar:* Rp{jumlah}
+💳 *Metode Bayar:* {metode_bayar}
+🕐 *Waktu Bayar:* {waktu_bayar} WIB
+👤 *Kode Pelanggan:* {kode_pelanggan}
+
+Terima kasih atas pembayaran Anda. Layanan internet Anda aktif dan dapat digunakan. 🙏
+
+_Simpan pesan ini sebagai bukti pembayaran._`
+
+const tplLoading = ref(false)
+const tplSaving = ref<string | null>(null)
+
+// reminder id per type (null = belum ada di DB, perlu create)
+const tplIds = ref<Record<string, string | null>>({ invoice_created: null, payment_confirmation: null })
+const tplValues = ref<Record<string, string>>({
+  invoice_created: DEFAULT_INVOICE_TPL,
+  payment_confirmation: DEFAULT_PAYMENT_TPL,
+})
+
+const TPL_VARS: Record<string, string[]> = {
+  invoice_created: ['{salam}', '{nama}', '{nomor_invoice}', '{periode}', '{paket}', '{jumlah}', '{jatuh_tempo}', '{kode_pelanggan}', '{alamat}'],
+  payment_confirmation: ['{salam}', '{nama}', '{nomor_invoice}', '{periode}', '{paket}', '{jumlah}', '{metode_bayar}', '{waktu_bayar}', '{kode_pelanggan}', '{alamat}'],
+}
+
+async function loadTemplates() {
+  tplLoading.value = true
+  try {
+    const { data } = await reminderApi.list()
+    const list: any[] = data.data || []
+    for (const type of ['invoice_created', 'payment_confirmation']) {
+      const found = list.find((r: any) => r.type === type)
+      if (found) {
+        tplIds.value[type] = found.id
+        tplValues.value[type] = found.message_template
+      }
+    }
+  } catch { /* keep defaults */ }
+  tplLoading.value = false
+}
+
+async function saveTemplate(type: string) {
+  const tpl = tplValues.value[type]
+  if (!tpl?.trim()) { message.warning('Template tidak boleh kosong'); return }
+  tplSaving.value = type
+  try {
+    const id = tplIds.value[type]
+    const name = type === 'invoice_created' ? 'Tagihan Masuk' : 'Konfirmasi Pembayaran'
+    if (id) {
+      await reminderApi.update(id, { message_template: tpl, name, type, is_active: true, days_offset: 0, agenda: '' })
+    } else {
+      const { data } = await reminderApi.create({ name, type, message_template: tpl, is_active: true, days_offset: 0, agenda: '' })
+      tplIds.value[type] = data?.id || data?.data?.id || null
+    }
+    message.success('Template disimpan')
+  } catch { message.error('Gagal menyimpan template') }
+  tplSaving.value = null
+}
+
 // ─── Init ───
 onMounted(() => {
   loadSession()
+  loadWASettings()
+  loadTemplates()
 })
 </script>
 
@@ -267,6 +370,92 @@ onMounted(() => {
               </n-button>
             </n-space>
       </n-space>
+    </n-card>
+
+    <!-- Pengaturan Pengirim Notifikasi -->
+    <n-card title="Pengaturan Notifikasi">
+      <p class="notif-desc">
+        Pilih nomor WhatsApp yang digunakan untuk mengirim notifikasi otomatis ke pelanggan.
+      </p>
+      <n-radio-group v-model:value="waSenderMode" class="notif-radio-group">
+        <n-radio value="own" class="notif-radio">
+          <div class="radio-content">
+            <div class="radio-title">WhatsApp Sendiri</div>
+            <n-text depth="3" class="radio-desc">
+              Notifikasi dikirim dari nomor WhatsApp yang terhubung di atas. Pastikan sesi aktif.
+            </n-text>
+          </div>
+        </n-radio>
+        <n-radio value="superadmin" class="notif-radio">
+          <div class="radio-content">
+            <div class="radio-title">WhatsApp Platform (Superadmin)</div>
+            <n-text depth="3" class="radio-desc">
+              Notifikasi dikirim dari nomor WhatsApp platform. Cocok jika belum memiliki nomor sendiri.
+            </n-text>
+          </div>
+        </n-radio>
+      </n-radio-group>
+      <n-alert v-if="waSenderMode === 'own'" type="info" :bordered="false" class="notif-alert">
+        Pastikan sesi WhatsApp di atas berstatus <strong>Terhubung</strong> agar notifikasi terkirim.
+      </n-alert>
+      <n-alert v-else type="warning" :bordered="false" class="notif-alert">
+        Notifikasi dikirim atas nama platform. Template pesan tetap menggunakan yang Anda atur.
+      </n-alert>
+      <div class="notif-actions">
+        <n-button type="primary" :loading="savingWA" @click="saveWASettings" class="notif-save-btn">Simpan</n-button>
+      </div>
+    </n-card>
+
+    <!-- Template Notifikasi -->
+    <n-card title="Template Notifikasi WhatsApp">
+      <p class="notif-desc">
+        Atur isi pesan WhatsApp yang dikirim otomatis ke pelanggan. Gunakan variabel yang tersedia agar pesan terisi data pelanggan secara dinamis.
+      </p>
+      <n-spin :show="tplLoading">
+        <n-tabs type="line" animated>
+
+          <n-tab-pane name="invoice_created" tab="Tagihan Masuk">
+            <p class="tpl-hint">Dikirim saat invoice baru diterbitkan untuk pelanggan.</p>
+            <n-input
+              v-model:value="tplValues.invoice_created"
+              type="textarea"
+              :rows="isMobile ? 10 : 14"
+              placeholder="Isi template pesan..."
+              class="tpl-textarea"
+            />
+            <div class="tpl-vars">
+              <span class="tpl-vars-label">Variabel:</span>
+              <code v-for="v in TPL_VARS.invoice_created" :key="v" class="tpl-var">{{ v }}</code>
+            </div>
+            <div class="tpl-actions">
+              <n-button type="primary" :loading="tplSaving === 'invoice_created'" @click="saveTemplate('invoice_created')" :class="{ 'full-w': isMobile }">
+                Simpan Template
+              </n-button>
+            </div>
+          </n-tab-pane>
+
+          <n-tab-pane name="payment_confirmation" tab="Konfirmasi Pembayaran">
+            <p class="tpl-hint">Dikirim otomatis setelah pembayaran pelanggan berhasil dikonfirmasi.</p>
+            <n-input
+              v-model:value="tplValues.payment_confirmation"
+              type="textarea"
+              :rows="isMobile ? 12 : 16"
+              placeholder="Isi template pesan..."
+              class="tpl-textarea"
+            />
+            <div class="tpl-vars">
+              <span class="tpl-vars-label">Variabel:</span>
+              <code v-for="v in TPL_VARS.payment_confirmation" :key="v" class="tpl-var">{{ v }}</code>
+            </div>
+            <div class="tpl-actions">
+              <n-button type="primary" :loading="tplSaving === 'payment_confirmation'" @click="saveTemplate('payment_confirmation')" :class="{ 'full-w': isMobile }">
+                Simpan Template
+              </n-button>
+            </div>
+          </n-tab-pane>
+
+        </n-tabs>
+      </n-spin>
     </n-card>
 
     <!-- Status Modal -->
@@ -396,5 +585,110 @@ onMounted(() => {
 
 .wa-label {
   color: rgba(255, 255, 255, 0.5);
+}
+
+/* Pengaturan Notifikasi card */
+.notif-desc {
+  font-size: 13px;
+  opacity: 0.55;
+  margin: 0 0 16px;
+}
+
+.notif-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notif-radio {
+  align-items: flex-start !important;
+}
+
+.radio-content {
+  padding: 2px 0;
+}
+
+.radio-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.radio-desc {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notif-alert {
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+.notif-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.notif-save-btn {
+  min-width: 100px;
+}
+
+@media (max-width: 480px) {
+  .notif-actions {
+    justify-content: stretch;
+  }
+
+  .notif-save-btn {
+    width: 100%;
+  }
+
+  .radio-title {
+    font-size: 13px;
+  }
+}
+
+/* Template Notifikasi */
+.tpl-hint {
+  font-size: 12px;
+  opacity: 0.5;
+  margin: 8px 0 10px;
+}
+
+.tpl-textarea {
+  font-family: ui-monospace, 'Fira Code', monospace;
+  font-size: 13px;
+}
+
+.tpl-vars {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tpl-vars-label {
+  font-size: 11px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.tpl-var {
+  font-size: 11px;
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.tpl-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.full-w {
+  width: 100%;
 }
 </style>

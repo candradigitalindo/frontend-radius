@@ -4,11 +4,11 @@ import {
   NCard, NGrid, NGridItem, NForm, NFormItem, NInput, NInputNumber,
   NButton, NSpace, NTabs, NTabPane, NTag, NText,
   NSelect, NSpin, NTooltip, NIcon, useMessage,
-  NDataTable, NModal, NPopconfirm, NSwitch,
+  NDataTable, NModal, NPopconfirm, NSwitch, NDivider, NAlert,
 } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { Building, Package, Users as UsersIcon, Link, Login, Copy, Check, Calendar, Message, Tag, AlertCircle, FileText, Plus } from '@vicons/tabler'
-import { tenantApi, reminderApi } from '../../api'
+import { tenantApi, reminderApi, billingProfileApi } from '../../api'
 
 const message = useMessage()
 const copied = ref(false)
@@ -19,6 +19,7 @@ const savingSettings = ref(false)
 const tenant = ref<any>({})
 const webhooks = ref<any[]>([])
 const activeTab = ref('info')
+
 const windowWidth = ref(window.innerWidth)
 const isMobile = computed(() => windowWidth.value < 640)
 function onResize() { windowWidth.value = window.innerWidth }
@@ -131,6 +132,28 @@ const pgProviderLabel: Record<string, string> = {
   xendit: 'Xendit',
 }
 
+const webhookKeyLabel: Record<string, string> = {
+  tripay: 'Invoice',
+  tripay_voucher: 'Voucher',
+  midtrans: 'Invoice',
+  midtrans_voucher: 'Voucher',
+  xendit: 'Invoice',
+  xendit_voucher: 'Voucher',
+}
+
+const providerWebhookKeys: Record<string, string[]> = {
+  tripay: ['tripay', 'tripay_voucher'],
+  midtrans: ['midtrans', 'midtrans_voucher'],
+  xendit: ['xendit', 'xendit_voucher'],
+}
+
+const activeWebhooks = computed(() => {
+  const provider = tenant.value.pg_provider
+  if (!provider) return []
+  const keys = providerWebhookKeys[provider] || []
+  return webhooks.value.filter(w => keys.includes(w.event))
+})
+
 const testingConnection = ref(false)
 
 const planExpiresFormatted = computed(() => {
@@ -212,7 +235,7 @@ onMounted(async () => {
       webhooks.value = Object.entries(rawWebhooks).map(([event, url]) => ({ event, url }))
     }
   } catch { message.error('Gagal memuat data tenant') }
-  await loadReminders()
+  await Promise.all([loadReminders(), loadBillingProfiles()])
   loading.value = false
 })
 
@@ -330,6 +353,98 @@ async function triggerReminders() {
     const { data } = await reminderApi.trigger()
     message.success(`Pengingat dipicu: ${data.sent || 0} terkirim`)
   } catch { message.error('Gagal memicu pengingat') }
+}
+
+// ─── Billing Profiles ───────────────────────────────────────
+const billingProfiles = ref<any[]>([])
+const showBPModal = ref(false)
+const editingBP = ref<any>(null)
+const savingBP = ref(false)
+const deletingBP = ref<string | null>(null)
+
+const bpForm = ref({
+  name: '',
+  billing_model: 'cycle',
+  invoice_day: 24,
+  due_day: 1,
+  isolir_day: 3,
+  grace_period: 0,
+  payment_timing: 'due_date',
+})
+
+const billingModelOptions = [
+  { label: 'Cycle — tanggal tetap tiap bulan', value: 'cycle' },
+  { label: 'Fixed — mengikuti tanggal aktivasi pelanggan', value: 'fixed' },
+]
+const paymentTimingOptions = [
+  { label: 'Bayar saat jatuh tempo', value: 'due_date' },
+  { label: 'Bayar di muka (advance)', value: 'advance' },
+]
+
+async function loadBillingProfiles() {
+  try {
+    const { data } = await billingProfileApi.list()
+    billingProfiles.value = data.data || []
+  } catch { billingProfiles.value = [] }
+}
+
+function openCreateBP() {
+  editingBP.value = null
+  bpForm.value = { name: '', billing_model: 'cycle', invoice_day: 24, due_day: 1, isolir_day: 3, grace_period: 0, payment_timing: 'due_date' }
+  showBPModal.value = true
+}
+
+function openEditBP(bp: any) {
+  editingBP.value = bp
+  bpForm.value = {
+    name: bp.name,
+    billing_model: bp.billing_model,
+    invoice_day: bp.invoice_day,
+    due_day: bp.due_day,
+    isolir_day: bp.isolir_day,
+    grace_period: bp.grace_period,
+    payment_timing: bp.payment_timing,
+  }
+  showBPModal.value = true
+}
+
+async function saveBP() {
+  if (!bpForm.value.name?.trim()) { message.warning('Nama profil wajib diisi'); return }
+  savingBP.value = true
+  try {
+    if (editingBP.value) {
+      await billingProfileApi.update(editingBP.value.id, bpForm.value)
+      message.success('Profil diperbarui')
+    } else {
+      await billingProfileApi.create(bpForm.value)
+      message.success('Profil ditambahkan')
+    }
+    showBPModal.value = false
+    await loadBillingProfiles()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || 'Gagal menyimpan profil')
+  }
+  savingBP.value = false
+}
+
+async function deleteBP(id: string) {
+  deletingBP.value = id
+  try {
+    await billingProfileApi.delete(id)
+    message.success('Profil dihapus')
+    await loadBillingProfiles()
+  } catch (e: any) {
+    message.error(e.response?.data?.error || 'Gagal menghapus profil')
+  }
+  deletingBP.value = null
+}
+
+async function setDefaultBP(id: string) {
+  try {
+    await billingProfileApi.setDefault(id)
+    message.success('Profil default diperbarui')
+    await loadBillingProfiles()
+  } catch { message.error('Gagal mengatur default') }
 }
 </script>
 
@@ -490,19 +605,101 @@ async function triggerReminders() {
                     <n-input-number v-model:value="tenant.grace_period" :min="0" :max="30" style="width: 100%" />
                   </n-form-item>
                 </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Model Billing Default">
+                    <n-select
+                      v-model:value="tenant.default_billing_type"
+                      :options="[
+                        { label: 'Cycle — tanggal tetap tiap bulan', value: 'cycle' },
+                        { label: 'Fixed — berdasarkan tanggal aktivasi pelanggan', value: 'fixed' },
+                      ]"
+                    />
+                  </n-form-item>
+                </n-grid-item>
+                <n-grid-item span="4 s:2 m:1">
+                  <n-form-item label="Waktu Pembayaran">
+                    <n-select
+                      v-model:value="tenant.default_payment_timing"
+                      :options="[
+                        { label: 'Bayar saat jatuh tempo', value: 'due_date' },
+                        { label: 'Bayar di muka (advance)', value: 'advance' },
+                      ]"
+                    />
+                  </n-form-item>
+                </n-grid-item>
               </n-grid>
+              <n-alert v-if="tenant.default_billing_type === 'fixed'" type="info" :bordered="false" style="margin: 8px 0 12px; font-size: 12px">
+                Model <strong>Fixed</strong>: jatuh tempo setiap bulan mengikuti tanggal aktivasi masing-masing pelanggan.
+                Field "Tgl Generate Invoice" dan "Tgl Jatuh Tempo" tidak digunakan untuk model ini.
+              </n-alert>
               <n-space justify="end" style="margin-top: 8px">
                 <n-button type="primary" :loading="saving" @click="saveTenant">Simpan Billing</n-button>
               </n-space>
             </n-form>
-          </n-tab-pane>
 
-          <!-- Pengingat -->
-          <n-tab-pane name="reminders" :tab="`Pengingat (${reminders.length})`">
+            <n-divider style="margin: 24px 0 16px" />
+
+            <!-- ── B. Profil Billing ── -->
             <div class="reminder-header">
-              <p class="tab-desc" style="margin-bottom: 0">
-                Atur pengingat otomatis via WhatsApp untuk tagihan pelanggan.
-              </p>
+              <div>
+                <div class="section-title">Profil Billing</div>
+                <div class="section-sub">Kelola profil jadwal tagihan untuk pelanggan</div>
+              </div>
+              <n-button type="primary" size="small" @click="openCreateBP">
+                <template #icon><n-icon :component="Plus" :size="15" /></template>
+                Tambah Profil
+              </n-button>
+            </div>
+
+            <div v-if="!billingProfiles.length" class="reminder-empty">Belum ada profil billing</div>
+            <div v-else class="bp-list">
+              <div v-for="bp in billingProfiles" :key="bp.id" class="bp-card">
+                <div class="bp-card-top">
+                  <div class="bp-card-left">
+                    <span class="bp-name">{{ bp.name }}</span>
+                    <n-tag v-if="bp.is_default" type="success" size="tiny" :bordered="false">Default</n-tag>
+                    <n-tag :type="bp.billing_model === 'cycle' ? 'info' : 'warning'" size="tiny" :bordered="false">
+                      {{ bp.billing_model === 'cycle' ? 'Cycle' : 'Fixed' }}
+                    </n-tag>
+                  </div>
+                  <div class="bp-card-actions">
+                    <n-button v-if="!bp.is_default" size="tiny" secondary @click="setDefaultBP(bp.id)">Set Default</n-button>
+                    <n-button size="tiny" quaternary @click="openEditBP(bp)">Edit</n-button>
+                    <n-popconfirm v-if="!bp.is_default" @positive-click="deleteBP(bp.id)">
+                      <template #trigger>
+                        <n-button size="tiny" quaternary type="error" :loading="deletingBP === bp.id">Hapus</n-button>
+                      </template>
+                      Hapus profil "{{ bp.name }}"?
+                    </n-popconfirm>
+                  </div>
+                </div>
+                <div class="bp-card-meta">
+                  <template v-if="bp.billing_model === 'cycle'">
+                    <span class="bp-meta-item">Invoice tgl {{ bp.invoice_day }}</span>
+                    <span class="bp-sep">·</span>
+                    <span class="bp-meta-item">JT tgl {{ bp.due_day }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="bp-meta-item">Generate {{ bp.invoice_day }} hari sebelum JT</span>
+                    <span class="bp-sep">·</span>
+                    <span class="bp-meta-item">JT = tanggal aktivasi</span>
+                  </template>
+                  <span class="bp-sep">·</span>
+                  <span class="bp-meta-item">Isolir +{{ bp.isolir_day }} hari</span>
+                  <span class="bp-sep">·</span>
+                  <span class="bp-meta-item">{{ bp.payment_timing === 'advance' ? 'Bayar di muka' : 'Bayar saat JT' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <n-divider style="margin: 24px 0 16px" />
+
+            <!-- ── C. Pengingat ── -->
+            <div class="reminder-header">
+              <div>
+                <div class="section-title">Pengingat Otomatis</div>
+                <div class="section-sub">WA dikirim ke pelanggan berdasarkan jatuh tempo tagihan</div>
+              </div>
               <div class="reminder-actions">
                 <n-popconfirm @positive-click="triggerReminders">
                   <template #trigger>
@@ -517,10 +714,8 @@ async function triggerReminders() {
               </div>
             </div>
 
-            <!-- Desktop table -->
             <n-data-table v-if="!isMobile" :columns="reminderCols" :data="reminders" :bordered="false" size="small" />
 
-            <!-- Mobile cards -->
             <div v-else class="reminder-cards">
               <div v-if="!reminders.length" class="reminder-empty">Belum ada pengingat</div>
               <div v-for="r in reminders" :key="r.id" class="reminder-card">
@@ -549,12 +744,12 @@ async function triggerReminders() {
                 </div>
               </div>
             </div>
+
           </n-tab-pane>
 
           <!-- Integrasi -->
-          <n-tab-pane name="integrations" tab="Integrasi">
+          <n-tab-pane name="integrations" tab="Payment Gateway">
             <n-form label-placement="top">
-              <div class="pg-section-title">Payment Gateway</div>
               <n-space align="center" :size="8" style="margin-bottom: 12px">
                 <n-tag v-if="tenant.pg_provider" type="success" size="small" :bordered="false">{{ pgProviderLabel[tenant.pg_provider] || tenant.pg_provider }}</n-tag>
                 <n-tag v-else type="warning" size="small" :bordered="false">Belum diatur</n-tag>
@@ -621,30 +816,91 @@ async function triggerReminders() {
                 <n-button v-if="tenant.pg_provider" secondary :loading="testingConnection" @click="testConnection">
                   Test Koneksi
                 </n-button>
-                <n-button type="primary" :loading="savingSettings" @click="saveSettings">Simpan Integrasi</n-button>
+                <n-button type="primary" :loading="savingSettings" @click="saveSettings">Simpan</n-button>
               </n-space>
             </n-form>
-          </n-tab-pane>
 
-          <!-- Webhooks -->
-          <n-tab-pane name="webhooks" :tab="`Webhooks (${webhooks.length})`">
-            <p class="tab-desc">Daftarkan URL berikut di dashboard payment gateway agar callback pembayaran otomatis masuk ke sistem.</p>
-            <div v-if="webhooks.length" class="webhook-list">
-              <div v-for="w in webhooks" :key="w.event" class="webhook-row">
-                <div class="webhook-info">
-                  <span class="webhook-label">{{ w.event }}</span>
-                  <span class="webhook-url">{{ w.url }}</span>
+            <!-- Webhook URLs per provider -->
+            <template v-if="activeWebhooks.length">
+              <n-divider style="margin: 20px 0 14px">
+                <span class="pg-section-title" style="margin: 0">URL Webhook {{ pgProviderLabel[tenant.pg_provider] }}</span>
+              </n-divider>
+              <p class="webhook-hint">Daftarkan URL berikut di dashboard {{ pgProviderLabel[tenant.pg_provider] }} agar notifikasi pembayaran masuk otomatis.</p>
+              <div class="webhook-list">
+                <div v-for="w in activeWebhooks" :key="w.event" class="webhook-row">
+                  <div class="webhook-info">
+                    <span class="webhook-label">{{ webhookKeyLabel[w.event] || w.event }}</span>
+                    <span class="webhook-url">{{ w.url }}</span>
+                  </div>
+                  <n-button size="small" :type="copyingWebhook === w.event ? 'success' : 'default'" @click="copyWebhook(w.event)" style="flex-shrink:0">
+                    {{ copyingWebhook === w.event ? 'Disalin!' : 'Salin' }}
+                  </n-button>
                 </div>
-                <n-button size="small" :type="copyingWebhook === w.event ? 'success' : 'default'" @click="copyWebhook(w.event)">
-                  {{ copyingWebhook === w.event ? 'Disalin!' : 'Salin' }}
-                </n-button>
               </div>
-            </div>
-            <n-text v-else depth="3" style="font-size: 13px">Belum ada webhook terdaftar.</n-text>
+            </template>
           </n-tab-pane>
         </n-tabs>
       </n-card>
     </n-space>
+
+    <!-- Billing Profile Modal -->
+    <n-modal
+      v-model:show="showBPModal"
+      preset="card"
+      :title="editingBP ? 'Edit Profil Billing' : 'Tambah Profil Billing'"
+      :style="{ maxWidth: isMobile ? '95vw' : '560px', width: '95vw' }"
+    >
+      <n-form label-placement="top">
+        <n-form-item label="Nama Profil">
+          <n-input v-model:value="bpForm.name" placeholder="Contoh: Profil Bulanan Standar" />
+        </n-form-item>
+        <n-form-item label="Model Billing">
+          <n-select v-model:value="bpForm.billing_model" :options="billingModelOptions" />
+        </n-form-item>
+        <n-alert v-if="bpForm.billing_model === 'fixed'" type="info" :bordered="false" style="margin-bottom: 12px; font-size: 12px">
+          <strong>Fixed:</strong> Jatuh tempo setiap bulan = hari aktivasi pelanggan.
+          "Invoice Day" = berapa hari <em>sebelum</em> JT invoice digenerate.
+        </n-alert>
+        <n-grid :cols="2" :x-gap="14">
+          <n-grid-item>
+            <n-form-item :label="bpForm.billing_model === 'cycle' ? 'Tgl Generate Invoice (1–28)' : 'Generate X Hari Sebelum JT'">
+              <n-input-number v-model:value="bpForm.invoice_day" :min="0" :max="28" style="width: 100%" />
+            </n-form-item>
+          </n-grid-item>
+          <n-grid-item>
+            <n-form-item label="Tgl Jatuh Tempo (1–28)" :disabled="bpForm.billing_model === 'fixed'">
+              <n-input-number
+                v-model:value="bpForm.due_day"
+                :min="1" :max="28"
+                style="width: 100%"
+                :disabled="bpForm.billing_model === 'fixed'"
+              />
+            </n-form-item>
+          </n-grid-item>
+          <n-grid-item>
+            <n-form-item label="Isolir (hari setelah JT)">
+              <n-input-number v-model:value="bpForm.isolir_day" :min="0" :max="30" style="width: 100%" />
+            </n-form-item>
+          </n-grid-item>
+          <n-grid-item>
+            <n-form-item label="Grace Period (hari)">
+              <n-input-number v-model:value="bpForm.grace_period" :min="0" :max="30" style="width: 100%" />
+            </n-form-item>
+          </n-grid-item>
+        </n-grid>
+        <n-form-item label="Waktu Pembayaran">
+          <n-select v-model:value="bpForm.payment_timing" :options="paymentTimingOptions" />
+        </n-form-item>
+      </n-form>
+      <template #action>
+        <div class="modal-actions">
+          <n-button @click="showBPModal = false">Batal</n-button>
+          <n-button type="primary" :loading="savingBP" @click="saveBP">
+            {{ editingBP ? 'Perbarui' : 'Tambah' }}
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
 
     <!-- Reminder Modal -->
     <n-modal
@@ -756,6 +1012,7 @@ async function triggerReminders() {
         </div>
       </template>
     </n-modal>
+
   </n-spin>
 </template>
 
@@ -847,6 +1104,13 @@ async function triggerReminders() {
 }
 
 /* ── Webhook ──────────────────────── */
+.webhook-hint {
+  font-size: 12px;
+  opacity: 0.5;
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
 .webhook-list {
   display: flex;
   flex-direction: column;
@@ -871,22 +1135,34 @@ async function triggerReminders() {
 .webhook-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  flex: 1;
 }
 
 .webhook-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  opacity: 0.5;
 }
 
 .webhook-url {
-  font-size: 11px;
+  font-size: 12px;
   font-family: ui-monospace, monospace;
-  opacity: 0.45;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-all;
+}
+
+@media (max-width: 600px) {
+  .webhook-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .webhook-row .n-button {
+    width: 100%;
+  }
 }
 
 /* ── Reminder ─────────────────────── */
@@ -1095,5 +1371,82 @@ async function triggerReminders() {
   font-size: 13px;
   opacity: 0.6;
   margin: 0 0 16px;
+}
+/* ── Section headers (Pengingat) ─────── */
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 2px;
+}
+.section-sub {
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+/* ── Billing Profiles ──────────────── */
+.bp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bp-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(128, 128, 128, 0.12);
+  background: rgba(128, 128, 128, 0.03);
+}
+:root.dark .bp-card {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.bp-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.bp-card-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.bp-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.bp-card-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.bp-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.bp-sep {
+  opacity: 0.4;
 }
 </style>

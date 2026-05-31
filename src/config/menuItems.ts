@@ -28,7 +28,6 @@ import {
   CashOutline as FinanceIcon,
   GlobeOutline as NetworkIcon,
   AppsOutline as ServiceIcon,
-  ChatbubblesOutline as CommsIcon,
   MegaphoneOutline as MarketingIcon,
   BuildOutline as AdminIcon,
 } from '@vicons/ionicons5'
@@ -84,15 +83,7 @@ export const allMenuItems: MenuOption[] = [
     children: [
       { label: 'Tiket', key: 'tickets', icon: ri(TicketIcon) },
       { label: 'Voucher', key: 'vouchers', icon: ri(VoucherIcon) },
-    ],
-  },
-  {
-    label: 'Komunikasi',
-    key: 'grp-komunikasi',
-    icon: ri(CommsIcon),
-    children: [
       { label: 'Notifikasi', key: 'notifications', icon: ri(NotifIcon) },
-      { label: 'WhatsApp', key: 'whatsapp', icon: ri(WaIcon) },
     ],
   },
   {
@@ -113,6 +104,7 @@ export const allMenuItems: MenuOption[] = [
     children: [
       { label: 'Pengguna', key: 'users', icon: ri(UserIcon) },
       { label: 'Role', key: 'roles', icon: ri(RoleIcon) },
+      { label: 'WhatsApp', key: 'whatsapp', icon: ri(WaIcon) },
       { label: 'Tenant', key: 'tenant', icon: ri(TenantIcon) },
       { label: 'Langganan', key: 'subscription', icon: ri(SubsIcon) },
       { label: 'Pengaturan', key: 'settings', icon: ri(SettingIcon) },

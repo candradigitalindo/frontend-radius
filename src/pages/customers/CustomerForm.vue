@@ -104,6 +104,7 @@ const billingTypeOptions = [
   { label: 'Range Tanggal (otomatis)', value: 'date_range' },
 ]
 
+
 const selectedPackage = computed(() => packages.value.find((p: any) => p.id === form.value.package_id))
 const packagePrice = computed(() => selectedPackage.value?.price || 0)
 const totalPrice = computed(() => {
@@ -406,28 +407,8 @@ async function handleSubmit() {
 
           <n-divider title-placement="left" style="font-size: 13px">Pengaturan Tagihan</n-divider>
 
-          <n-form-item label="Model Tagihan">
-            <n-select v-model:value="form.billing_type" :options="billingTypeOptions" filterable />
-          </n-form-item>
-          <n-form-item v-if="form.billing_type !== 'date_range'" label="Tanggal Tagihan Dibuat">
-            <n-date-picker
-              v-if="form.billing_type === 'fixed'"
-              v-model:value="form.billing_date_ts"
-              type="date"
-              style="width: 100%"
-              @update:value="onBillingDatePick"
-            />
-            <n-input-number v-else v-model:value="form.billing_date" :min="1" :max="28" style="width: 100%" />
-          </n-form-item>
-          <n-form-item v-if="form.billing_type === 'range'" label="Batas Pembayaran (Tgl)">
-            <n-input-number v-model:value="form.billing_deadline" :min="1" :max="28" style="width: 100%" />
-          </n-form-item>
-
-          <n-alert v-if="form.billing_type === 'range'" type="info" style="margin-bottom: 16px" :bordered="false">
-            Tagihan dibuat tanggal <n-text strong>{{ form.billing_date }}</n-text>, batas pembayaran tanggal <n-text strong>{{ form.billing_deadline }}</n-text> setiap bulan.
-          </n-alert>
-          <n-alert v-if="form.billing_type === 'date_range'" type="info" style="margin-bottom: 16px" :bordered="false">
-            Billing akan mengikuti Setingan Administrasi → Tenant → Konfigurasi Billing
+          <n-alert type="info" :bordered="false" style="margin-bottom: 16px; font-size: 12px">
+            Jadwal tagihan mengikuti pengaturan di <strong>Administrasi → Tenant → Konfigurasi Billing</strong>
           </n-alert>
 
           <n-divider title-placement="left" style="font-size: 13px">Harga & Biaya</n-divider>
@@ -560,30 +541,8 @@ async function handleSubmit() {
           <n-select v-model:value="form.package_id" :options="packageOptions" clearable filterable placeholder="Pilih paket" />
         </n-form-item>
 
-        <n-divider title-placement="left" style="font-size: 13px">Pengaturan Tagihan</n-divider>
-
-        <n-form-item label="Model Tagihan">
-          <n-select v-model:value="form.billing_type" :options="billingTypeOptions" filterable />
-        </n-form-item>
-        <n-form-item v-if="form.billing_type !== 'date_range'" label="Tanggal Tagihan Dibuat">
-          <n-date-picker
-            v-if="form.billing_type === 'fixed'"
-            v-model:value="form.billing_date_ts"
-            type="date"
-            style="width: 100%"
-            @update:value="onBillingDatePick"
-          />
-          <n-input-number v-else v-model:value="form.billing_date" :min="1" :max="28" style="width: 100%" />
-        </n-form-item>
-        <n-form-item v-if="form.billing_type === 'range'" label="Batas Pembayaran (Tgl)">
-          <n-input-number v-model:value="form.billing_deadline" :min="1" :max="28" style="width: 100%" />
-        </n-form-item>
-
-        <n-alert v-if="form.billing_type === 'range'" type="info" style="margin-bottom: 16px" :bordered="false">
-          Tagihan dibuat tanggal <n-text strong>{{ form.billing_date }}</n-text>, batas pembayaran tanggal <n-text strong>{{ form.billing_deadline }}</n-text> setiap bulan.
-        </n-alert>
-        <n-alert v-if="form.billing_type === 'date_range'" type="info" style="margin-bottom: 16px" :bordered="false">
-          Billing akan mengikuti Setingan Administrasi → Tenant → Konfigurasi Billing
+        <n-alert type="info" :bordered="false" style="margin: 8px 0 16px; font-size: 12px">
+          Jadwal tagihan mengikuti pengaturan di <strong>Administrasi → Tenant → Konfigurasi Billing</strong>
         </n-alert>
 
         <n-divider title-placement="left" style="font-size: 13px">Harga & Biaya</n-divider>
@@ -796,4 +755,5 @@ async function handleSubmit() {
     align-items: stretch;
   }
 }
+
 </style>

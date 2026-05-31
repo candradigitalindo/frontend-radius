@@ -273,11 +273,35 @@ function checkMobile() {
   isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
 }
 
+// ─── Webhook URLs ───
+const webhooks = ref<{ event: string; url: string }[]>([])
+const copyingWebhook = ref<string | null>(null)
+
+async function loadWebhookUrls() {
+  try {
+    const res = await adminApi.getWebhookUrls()
+    const raw = res.data?.data
+    if (raw && typeof raw === 'object') {
+      webhooks.value = Object.entries(raw).map(([event, url]) => ({ event, url: url as string }))
+    }
+  } catch { /* silently skip */ }
+}
+
+function copyWebhook(event: string) {
+  const w = webhooks.value.find(x => x.event === event)
+  if (!w) return
+  navigator.clipboard.writeText(w.url).then(() => {
+    copyingWebhook.value = event
+    setTimeout(() => { copyingWebhook.value = null }, 2000)
+  })
+}
+
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
   loadSettings()
   loadWASession()
+  loadWebhookUrls()
 })
 
 onUnmounted(() => {
@@ -562,6 +586,37 @@ onUnmounted(() => {
                 </n-grid-item>
               </n-grid>
             </n-form>
+
+            <!-- Webhook URLs -->
+            <n-divider>
+              <n-text depth="3" style="font-size: 12px">URL Webhook Subscription</n-text>
+            </n-divider>
+            <p style="font-size: 13px; opacity: 0.6; margin: 0 0 12px">
+              Daftarkan URL berikut ke dashboard payment gateway agar notifikasi pembayaran subscribe tenant diterima otomatis.
+            </p>
+            <div v-if="webhooks.length === 0" style="color: rgba(128,128,128,0.6); font-size: 13px; padding: 4px 0">
+              Memuat URL webhook...
+            </div>
+            <div v-else class="webhook-list">
+              <div v-for="w in webhooks" :key="w.event" class="webhook-item">
+                <div class="webhook-meta">
+                  <n-tag :bordered="false" size="small" type="error" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em">
+                    {{ w.event.replace(/_/g, ' ') }}
+                  </n-tag>
+                </div>
+                <div class="webhook-url-row">
+                  <code class="webhook-url">{{ w.url }}</code>
+                  <n-button
+                    size="small"
+                    :type="copyingWebhook === w.event ? 'success' : 'default'"
+                    @click="copyWebhook(w.event)"
+                    style="flex-shrink: 0"
+                  >
+                    {{ copyingWebhook === w.event ? 'Tersalin!' : 'Salin' }}
+                  </n-button>
+                </div>
+              </div>
+            </div>
           </div>
         </n-tab-pane>
 
@@ -1113,5 +1168,37 @@ html:not(.dark) .theme-preview-live { background: #fff5f5; border-color: #fecdd3
   .bottom-bar :deep(.n-button) {
     width: 100%;
   }
+}
+
+/* Webhook List */
+.webhook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.webhook-item {
+  background: rgba(255, 23, 68, 0.04);
+  border: 1px solid rgba(255, 23, 68, 0.1);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.webhook-meta { margin-bottom: 8px; }
+.webhook-url-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.webhook-url {
+  flex: 1;
+  font-size: 12px;
+  word-break: break-all;
+  background: rgba(128, 128, 128, 0.08);
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: inherit;
+}
+@media (max-width: 640px) {
+  .webhook-url-row { flex-direction: column; align-items: stretch; }
+  .webhook-url-row .n-button { width: 100%; }
 }
 </style>
