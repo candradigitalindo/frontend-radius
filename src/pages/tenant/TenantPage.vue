@@ -697,8 +697,8 @@ async function setDefaultBP(id: string) {
             <!-- ── C. Pengingat ── -->
             <div class="reminder-header">
               <div>
-                <div class="section-title">Pengingat Otomatis</div>
-                <div class="section-sub">WA dikirim ke pelanggan berdasarkan jatuh tempo tagihan</div>
+                <div class="section-title">Jadwal Pengingat WA</div>
+                <div class="section-sub">Cronjob mengirim WA ke pelanggan berdasarkan aturan ini setiap hari pukul 10:00</div>
               </div>
               <div class="reminder-actions">
                 <n-popconfirm @positive-click="triggerReminders">
