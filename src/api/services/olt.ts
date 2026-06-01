@@ -13,4 +13,5 @@ export const oltApi = {
   snmpSystem: (id: string) => http.get(`/olts/${id}/snmp/system`),
   snmpPonPorts: (id: string) => http.get(`/olts/${id}/snmp/pon-ports`),
   snmpMonitor: (id: string) => http.get(`/olts/${id}/snmp/monitor`),
+  sync: (id: string) => http.post(`/olts/${id}/sync`),
 }

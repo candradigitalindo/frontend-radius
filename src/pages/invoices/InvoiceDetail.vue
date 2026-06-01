@@ -15,7 +15,19 @@ const invoice = ref<any>({})
 const payments = ref<any[]>([])
 const showPayModal = ref(false)
 const saving = ref(false)
+const notifying = ref(false)
 const id = route.params.id as string
+
+async function handleNotify() {
+  notifying.value = true
+  try {
+    await invoiceApi.notify(id)
+    message.success('Notifikasi WhatsApp berhasil dikirim')
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || 'Gagal mengirim notifikasi')
+  }
+  notifying.value = false
+}
 const isMobile = ref(window.innerWidth < 768)
 const descCols = computed(() => isMobile.value ? 1 : 2)
 function onResize() { isMobile.value = window.innerWidth < 768 }
@@ -96,6 +108,7 @@ onMounted(fetchData)
         <div class="detail-header">
           <span class="detail-title">Invoice {{ invoice.invoice_number }}</span>
           <div class="detail-actions">
+            <n-button size="small" secondary :loading="notifying" @click="handleNotify">Kirim WA</n-button>
             <n-button v-if="invoice.status !== 'paid'" type="primary" size="small" @click="openPay">Bayar</n-button>
             <n-button size="small" @click="router.push('/invoices')">Kembali</n-button>
           </div>

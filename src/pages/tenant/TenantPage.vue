@@ -205,9 +205,32 @@ async function saveSettings() {
 }
 
 async function testConnection() {
+  const provider   = tenant.value.pg_provider || ''
+  const apiKey     = tenant.value.pg_api_key     || ''
+  const secretKey  = tenant.value.pg_secret_key  || ''
+  const merchantId = tenant.value.pg_merchant_id || ''
+  const sandbox    = tenant.value.pg_sandbox !== false
+
+  // Client-side validation
+  if (!provider) { message.warning('Pilih provider payment gateway terlebih dahulu'); return }
+  if (provider === 'tripay') {
+    if (!apiKey)     { message.warning('Tripay: API Key belum diisi'); return }
+    if (!secretKey)  { message.warning('Tripay: Private Key belum diisi'); return }
+    if (!merchantId) { message.warning('Tripay: Merchant Code belum diisi'); return }
+  } else if (provider === 'midtrans') {
+    if (!secretKey) { message.warning('Midtrans: Server Key belum diisi'); return }
+  } else if (provider === 'xendit') {
+    if (!apiKey) { message.warning('Xendit: Secret Key belum diisi'); return }
+  }
+
+  // Save first so DB is in sync with the form, then test
   testingConnection.value = true
   try {
-    const { data } = await tenantApi.testSettings()
+    await tenantApi.updateSettings({ pg_provider: provider, pg_api_key: apiKey, pg_secret_key: secretKey, pg_merchant_id: merchantId, pg_sandbox: sandbox })
+  } catch { /* ignore save error, still proceed to test */ }
+
+  try {
+    const { data } = await tenantApi.testSettings({ pg_provider: provider, pg_api_key: apiKey, pg_secret_key: secretKey, pg_merchant_id: merchantId, pg_sandbox: sandbox })
     if (data.success) {
       message.success(data.message || 'Koneksi payment gateway berhasil')
     } else {
@@ -763,95 +786,154 @@ async function setDefaultBP(id: string) {
 
           <!-- Integrasi -->
           <n-tab-pane name="integrations" tab="Payment Gateway">
-            <n-form label-placement="top">
-              <n-space align="center" :size="8" style="margin-bottom: 12px">
-                <n-tag v-if="tenant.pg_provider" type="success" size="small" :bordered="false">{{ pgProviderLabel[tenant.pg_provider] || tenant.pg_provider }}</n-tag>
-                <n-tag v-else type="warning" size="small" :bordered="false">Belum diatur</n-tag>
-                <n-tag v-if="tenant.pg_provider && tenant.pg_sandbox !== false" type="warning" size="small" :bordered="false">Mode Testing</n-tag>
-                <n-tag v-else-if="tenant.pg_provider" type="success" size="small" :bordered="false">Mode Produksi</n-tag>
-              </n-space>
-              <n-grid :cols="4" :x-gap="16" :y-gap="0" responsive="screen" item-responsive>
-                <n-grid-item span="4 s:2 m:1">
-                  <n-form-item label="Provider">
-                    <n-select v-model:value="tenant.pg_provider" :options="pgProviderOptions" clearable />
-                  </n-form-item>
-                </n-grid-item>
-                <n-grid-item v-if="tenant.pg_provider" span="4 s:2 m:1">
-                  <n-form-item label="Mode Sandbox">
-                    <n-switch v-model:value="tenant.pg_sandbox" :round="false">
-                      <template #checked>Testing</template>
-                      <template #unchecked>Produksi</template>
-                    </n-switch>
-                  </n-form-item>
-                </n-grid-item>
-                <template v-if="tenant.pg_provider === 'tripay'">
-                  <n-grid-item span="4 s:2 m:1">
-                    <n-form-item label="API Key">
-                      <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="Tripay API Key" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item span="4 s:2 m:1">
-                    <n-form-item label="Private Key">
-                      <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="Tripay Private Key" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item span="4 s:2 m:1">
-                    <n-form-item label="Merchant Code">
-                      <n-input v-model:value="tenant.pg_merchant_id" placeholder="Kode merchant Tripay" />
-                    </n-form-item>
-                  </n-grid-item>
-                </template>
-                <template v-else-if="tenant.pg_provider === 'midtrans'">
-                  <n-grid-item span="4 s:2 m:1">
-                    <n-form-item label="Client Key">
-                      <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="SB-Mid-client-xxx" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item span="4 s:2 m:1">
-                    <n-form-item label="Server Key">
-                      <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="SB-Mid-server-xxx" />
-                    </n-form-item>
-                  </n-grid-item>
-                </template>
-                <template v-else-if="tenant.pg_provider === 'xendit'">
-                  <n-grid-item span="4 s:2 m:1">
-                    <n-form-item label="Secret Key (xnd_...)">
-                      <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="xnd_development_XXXXXXXX" />
-                    </n-form-item>
-                  </n-grid-item>
-                  <n-grid-item span="4 s:2 m:1">
-                    <n-form-item label="Webhook Verification Token">
-                      <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="Token verifikasi webhook Xendit" />
-                    </n-form-item>
-                  </n-grid-item>
-                </template>
-              </n-grid>
-              <n-space justify="end" :size="8" style="margin-top: 8px">
-                <n-button v-if="tenant.pg_provider" secondary :loading="testingConnection" @click="testConnection">
+
+            <!-- Status bar -->
+            <div class="pg-status-bar">
+              <div class="pg-status-left">
+                <div v-if="tenant.pg_provider" class="pg-provider-badge">
+                  <span class="pg-provider-dot" :class="tenant.pg_sandbox !== false ? 'dot-warn' : 'dot-ok'"></span>
+                  <span class="pg-provider-name">{{ pgProviderLabel[tenant.pg_provider] }}</span>
+                </div>
+                <div v-else class="pg-provider-badge">
+                  <span class="pg-provider-dot dot-off"></span>
+                  <span class="pg-provider-name" style="opacity:.5">Tidak aktif</span>
+                </div>
+                <n-tag v-if="tenant.pg_provider && tenant.pg_sandbox !== false" type="warning" size="small" :bordered="false" round>Sandbox</n-tag>
+                <n-tag v-else-if="tenant.pg_provider" type="success" size="small" :bordered="false" round>Produksi</n-tag>
+              </div>
+              <div class="pg-status-right">
+                <n-button v-if="tenant.pg_provider" size="small" secondary :loading="testingConnection" @click="testConnection">
                   Test Koneksi
                 </n-button>
-                <n-button type="primary" :loading="savingSettings" @click="saveSettings">Simpan</n-button>
-              </n-space>
-            </n-form>
+                <n-button type="primary" size="small" :loading="savingSettings" @click="saveSettings">Simpan</n-button>
+              </div>
+            </div>
 
-            <!-- Webhook URLs per provider -->
-            <template v-if="activeWebhooks.length">
-              <n-divider style="margin: 20px 0 14px">
-                <span class="pg-section-title" style="margin: 0">URL Webhook {{ pgProviderLabel[tenant.pg_provider] }}</span>
-              </n-divider>
-              <p class="webhook-hint">Daftarkan URL berikut di dashboard {{ pgProviderLabel[tenant.pg_provider] }} agar notifikasi pembayaran masuk otomatis.</p>
-              <div class="webhook-list">
-                <div v-for="w in activeWebhooks" :key="w.event" class="webhook-row">
-                  <div class="webhook-info">
-                    <span class="webhook-label">{{ webhookKeyLabel[w.event] || w.event }}</span>
-                    <span class="webhook-url">{{ w.url }}</span>
+            <!-- Provider selector + sandbox toggle -->
+            <div class="pg-section">
+              <div class="pg-section-label">Provider</div>
+              <div class="pg-row">
+                <div class="pg-field pg-field-wide">
+                  <n-select
+                    v-model:value="tenant.pg_provider"
+                    :options="pgProviderOptions"
+                    clearable
+                    placeholder="Pilih payment gateway..."
+                  />
+                  <span class="pg-field-hint">Semua transaksi pelanggan diproses melalui provider ini</span>
+                </div>
+                <div v-if="tenant.pg_provider" class="pg-field pg-field-narrow">
+                  <div class="pg-sandbox-toggle">
+                    <div class="pg-mode-seg">
+                      <button
+                        class="pg-mode-btn"
+                        :class="tenant.pg_sandbox !== false ? 'pg-mode-sandbox' : 'pg-mode-inactive'"
+                        @click="tenant.pg_sandbox = true"
+                        type="button"
+                      >
+                        <span class="pg-mode-dot"></span> Testing
+                      </button>
+                      <button
+                        class="pg-mode-btn"
+                        :class="tenant.pg_sandbox === false ? 'pg-mode-prod' : 'pg-mode-inactive'"
+                        @click="tenant.pg_sandbox = false"
+                        type="button"
+                      >
+                        <span class="pg-mode-dot"></span> Produksi
+                      </button>
+                    </div>
+                    <span class="pg-field-hint">
+                      {{ tenant.pg_sandbox !== false ? 'Mode testing — transaksi tidak nyata' : 'Mode produksi — transaksi nyata' }}
+                    </span>
                   </div>
-                  <n-button size="small" :type="copyingWebhook === w.event ? 'success' : 'default'" @click="copyWebhook(w.event)" style="flex-shrink:0">
-                    {{ copyingWebhook === w.event ? 'Disalin!' : 'Salin' }}
-                  </n-button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Credentials per provider -->
+            <template v-if="tenant.pg_provider === 'tripay'">
+              <div class="pg-section">
+                <div class="pg-section-label">Kredensial Tripay</div>
+                <div class="pg-credentials-grid">
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">API Key <span class="pg-cred-required">*</span></div>
+                    <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="T-xxx..." />
+                    <div class="pg-cred-hint">Lihat di Tripay → Akun → API Key</div>
+                  </div>
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">Private Key <span class="pg-cred-required">*</span></div>
+                    <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="Private key..." />
+                    <div class="pg-cred-hint">Untuk verifikasi callback/webhook</div>
+                  </div>
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">Merchant Code <span class="pg-cred-required">*</span></div>
+                    <n-input v-model:value="tenant.pg_merchant_id" placeholder="T12345" />
+                    <div class="pg-cred-hint">Kode merchant di dashboard Tripay</div>
+                  </div>
                 </div>
               </div>
             </template>
+
+            <template v-else-if="tenant.pg_provider === 'midtrans'">
+              <div class="pg-section">
+                <div class="pg-section-label">Kredensial Midtrans</div>
+                <div class="pg-credentials-grid">
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">Merchant ID <span class="pg-cred-required">*</span></div>
+                    <n-input v-model:value="tenant.pg_merchant_id" placeholder="G123456789" />
+                    <div class="pg-cred-hint">Tertera di header dashboard Midtrans</div>
+                  </div>
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">Client Key <span class="pg-cred-required">*</span></div>
+                    <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="SB-Mid-client-xxx" />
+                    <div class="pg-cred-hint">Digunakan untuk inisialisasi Snap popup</div>
+                  </div>
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">Server Key <span class="pg-cred-required">*</span></div>
+                    <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="SB-Mid-server-xxx" />
+                    <div class="pg-cred-hint">Untuk pembuatan transaksi dari backend</div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <template v-else-if="tenant.pg_provider === 'xendit'">
+              <div class="pg-section">
+                <div class="pg-section-label">Kredensial Xendit</div>
+                <div class="pg-credentials-grid">
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">Secret Key <span class="pg-cred-required">*</span></div>
+                    <n-input v-model:value="tenant.pg_api_key" type="password" show-password-on="click" placeholder="xnd_development_XXXXXXXX" />
+                    <div class="pg-cred-hint">Secret key dari Settings → API Keys di Xendit</div>
+                  </div>
+                  <div class="pg-cred-item">
+                    <div class="pg-cred-label">Webhook Token</div>
+                    <n-input v-model:value="tenant.pg_secret_key" type="password" show-password-on="click" placeholder="Token verifikasi webhook" />
+                    <div class="pg-cred-hint">Untuk memverifikasi callback dari Xendit</div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Webhook URLs -->
+            <template v-if="activeWebhooks.length">
+              <div class="pg-section">
+                <div class="pg-section-label">URL Webhook</div>
+                <p class="pg-webhook-desc">Daftarkan URL berikut di dashboard {{ pgProviderLabel[tenant.pg_provider] }} agar notifikasi pembayaran masuk otomatis.</p>
+                <div class="webhook-list">
+                  <div v-for="w in activeWebhooks" :key="w.event" class="webhook-row">
+                    <div class="webhook-info">
+                      <span class="webhook-label">{{ webhookKeyLabel[w.event] || w.event }}</span>
+                      <span class="webhook-url">{{ w.url }}</span>
+                    </div>
+                    <n-button size="small" :type="copyingWebhook === w.event ? 'success' : 'default'" @click="copyWebhook(w.event)" style="flex-shrink:0">
+                      {{ copyingWebhook === w.event ? '✓ Disalin' : 'Salin' }}
+                    </n-button>
+                  </div>
+                </div>
+              </div>
+            </template>
+
           </n-tab-pane>
         </n-tabs>
       </n-card>
@@ -1036,6 +1118,7 @@ async function setDefaultBP(id: string) {
               <span class="hint-var">{paket}</span>
               <span class="hint-var">{jumlah}</span>
               <span class="hint-var">{jatuh_tempo}</span>
+              <span class="hint-var" title="Link bayar PG (jika tersedia)">{payment_url}</span>
             </div>
           </div>
         </n-grid-item>
@@ -1131,14 +1214,144 @@ async function setDefaultBP(id: string) {
   .webhook-row { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
 
-/* ── PG Section ───────────────────── */
-.pg-section-title {
-  font-size: 12px;
+/* ── Payment Gateway redesign ─────── */
+.pg-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(128,128,128,0.1);
+  background: rgba(128,128,128,0.03);
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.pg-status-left  { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.pg-status-right { display: flex; align-items: center; gap: 8px; }
+.pg-provider-badge { display: flex; align-items: center; gap: 7px; }
+.pg-provider-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-ok   { background: #18a058; box-shadow: 0 0 0 3px rgba(24,160,88,0.18); }
+.dot-warn { background: #f0a020; box-shadow: 0 0 0 3px rgba(240,160,32,0.18); }
+.dot-off  { background: rgba(128,128,128,0.35); }
+.pg-provider-name { font-size: 14px; font-weight: 600; }
+
+.pg-section {
+  margin-bottom: 20px;
+}
+.pg-section-label {
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.45;
+  letter-spacing: 0.6px;
+  opacity: 0.4;
   margin-bottom: 10px;
+}
+.pg-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.pg-field { display: flex; flex-direction: column; gap: 4px; }
+.pg-field-wide  { flex: 1; min-width: 180px; }
+.pg-field-narrow { flex: 0 0 auto; }
+.pg-sandbox-toggle { display: flex; flex-direction: column; gap: 6px; padding-top: 2px; }
+
+/* Segmented mode toggle */
+.pg-mode-seg {
+  display: inline-flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(128,128,128,0.2);
+  background: rgba(128,128,128,0.06);
+}
+.pg-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.pg-mode-btn .pg-mode-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+/* Testing aktif → orange */
+.pg-mode-sandbox {
+  background: rgba(240, 160, 32, 0.15);
+  color: #d97706;
+}
+html.dark .pg-mode-sandbox {
+  background: rgba(240, 160, 32, 0.2);
+  color: #fbbf24;
+}
+.pg-mode-sandbox .pg-mode-dot { opacity: 1; background: #d97706; }
+html.dark .pg-mode-sandbox .pg-mode-dot { background: #fbbf24; }
+
+/* Produksi aktif → hijau */
+.pg-mode-prod {
+  background: rgba(24, 160, 88, 0.12);
+  color: #16a34a;
+}
+html.dark .pg-mode-prod {
+  background: rgba(24, 160, 88, 0.2);
+  color: #4ade80;
+}
+.pg-mode-prod .pg-mode-dot { opacity: 1; background: #16a34a; }
+html.dark .pg-mode-prod .pg-mode-dot { background: #4ade80; }
+
+/* Tidak aktif → abu */
+.pg-mode-inactive {
+  color: rgba(128,128,128,0.5);
+}
+.pg-mode-inactive:hover {
+  background: rgba(128,128,128,0.08);
+  color: rgba(128,128,128,0.8);
+}
+.pg-field-hint {
+  font-size: 11px;
+  opacity: 0.45;
+  line-height: 1.4;
+}
+
+.pg-credentials-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.pg-cred-item { display: flex; flex-direction: column; gap: 5px; }
+.pg-cred-label {
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pg-cred-required { color: #e03131; font-size: 13px; line-height: 1; }
+.pg-cred-hint { font-size: 11px; opacity: 0.4; line-height: 1.4; }
+
+.pg-webhook-desc {
+  font-size: 12px;
+  opacity: 0.5;
+  margin: 0 0 10px;
+  line-height: 1.5;
 }
 
 /* ── Webhook ──────────────────────── */

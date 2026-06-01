@@ -67,6 +67,7 @@ const routes: RouteRecordRaw[] = [
       { path: '', name: 'sa-dashboard', component: () => import('../pages/superadmin/SaDashboard.vue') },
       { path: 'tenants', name: 'sa-tenants', component: () => import('../pages/superadmin/SaTenantList.vue') },
       { path: 'tenants/:id', name: 'sa-tenant-detail', component: () => import('../pages/superadmin/SaTenantDetail.vue') },
+      { path: 'transaksi', name: 'sa-transaksi', component: () => import('../pages/superadmin/SaTransaksi.vue') },
       { path: 'subscription-products', name: 'sa-subscription-products', component: () => import('../pages/superadmin/SaSubscriptionProducts.vue') },
       { path: 'subscription-reminders', name: 'sa-subscription-reminders', component: () => import('../pages/superadmin/SaSubscriptionReminders.vue') },
       { path: 'settings', name: 'sa-settings', component: () => import('../pages/superadmin/SaSettings.vue') },
@@ -86,6 +87,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'tickets/create', name: 'portal-ticket-create', component: () => import('../pages/portal/PortalTicketCreate.vue') },
       { path: 'tickets/:id', name: 'portal-ticket-detail', component: () => import('../pages/portal/PortalTicketDetail.vue') },
       { path: 'profile', name: 'portal-profile', component: () => import('../pages/portal/PortalProfile.vue') },
+      { path: 'device', name: 'portal-device', component: () => import('../pages/portal/PortalDevice.vue') },
     ],
   },
 

@@ -4,7 +4,7 @@ import {
   NCard, NButton, NSpace, NTag, NText, NSpin, NAlert,
   NRadioGroup, NRadioButton, useMessage
 } from 'naive-ui'
-import { subscriptionApi } from '../../api'
+import { subscriptionApi, tenantApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
 import { useThemeStore } from '../../stores/theme'
 
@@ -15,6 +15,7 @@ const themeStore = useThemeStore()
 const loading = ref(true)
 const paying = ref(false)
 const plans = ref<any[]>([])
+const tenantDetail = ref<any>({})
 const selectedPlanId = ref('')
 const duration = ref<1 | 12>(1)
 
@@ -63,6 +64,22 @@ async function fetchPlans() {
   loading.value = false
 }
 
+function loadSnapScript(sandbox: boolean): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const src = sandbox
+      ? 'https://app.sandbox.midtrans.com/snap/snap.js'
+      : 'https://app.midtrans.com/snap/snap.js'
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return }
+    const el = document.createElement('script')
+    el.src = src
+    const clientKey = tenantDetail.value?.pg_api_key || ''
+    if (clientKey) el.setAttribute('data-client-key', clientKey)
+    el.onload = () => resolve()
+    el.onerror = () => reject(new Error('Gagal memuat Midtrans Snap.js'))
+    document.head.appendChild(el)
+  })
+}
+
 async function handlePay() {
   if (!selectedPlanId.value) {
     message.warning('Pilih paket terlebih dahulu')
@@ -70,18 +87,30 @@ async function handlePay() {
   }
   paying.value = true
   try {
-    // Create subscription order
     const { data: orderData } = await subscriptionApi.subscribe(selectedPlanId.value, duration.value)
     const orderId = orderData.data?.id
     if (!orderId) throw new Error('Gagal membuat order')
 
-    // Create payment
     const returnURL = window.location.origin + '/subscription'
     const { data: payData } = await subscriptionApi.createPayment(orderId, returnURL)
-    const payURL = payData.data?.payment_url
-    if (!payURL) throw new Error('Gagal membuat pembayaran')
+    const snapToken: string | undefined = payData.data?.snap_token
+    const payURL: string | undefined = payData.data?.payment_url
 
-    window.location.href = payURL
+    if (snapToken) {
+      const sandbox = payURL?.includes('sandbox') ?? false
+      await loadSnapScript(sandbox)
+      ;(window as any).snap.pay(snapToken, {
+        language: 'id',
+        onSuccess: () => { window.location.href = returnURL },
+        onPending: () => { window.location.href = returnURL },
+        onError: () => { message.error('Pembayaran gagal'); paying.value = false },
+        onClose: () => { paying.value = false },
+      })
+    } else if (payURL) {
+      window.location.href = payURL
+    } else {
+      throw new Error('Gagal membuat pembayaran')
+    }
   } catch (e: any) {
     message.error(e.response?.data?.error || 'Gagal memproses pembayaran')
     paying.value = false
@@ -93,7 +122,13 @@ function handleLogout() {
   window.location.href = '/login'
 }
 
-onMounted(fetchPlans)
+onMounted(async () => {
+  await fetchPlans()
+  try {
+    const { data } = await tenantApi.current()
+    tenantDetail.value = data?.data || data || {}
+  } catch { /* non-fatal — snap.js will load without data-client-key */ }
+})
 </script>
 
 <template>

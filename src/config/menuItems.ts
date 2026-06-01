@@ -51,7 +51,6 @@ export const allMenuItems: MenuOption[] = [
     children: [
       { label: 'Daftar Pelanggan', key: 'customers', icon: ri(CustomerIcon) },
       { label: 'Paket', key: 'packages', icon: ri(PackageIcon) },
-      { label: 'Monitoring Speed', key: 'monitoring-speed', icon: ri(BandwidthIcon) },
     ],
   },
   {
@@ -73,7 +72,8 @@ export const allMenuItems: MenuOption[] = [
       { label: 'OLT', key: 'olts', icon: ri(OltIcon) },
       { label: 'ODP', key: 'odps', icon: ri(OdpIcon) },
       { label: 'IPAM', key: 'ip-pools', icon: ri(IpamIcon) },
-      { label: 'Bandwidth', key: 'bandwidth', icon: ri(BandwidthIcon) },
+      { label: 'Konsumsi Data', key: 'bandwidth', icon: ri(BandwidthIcon) },
+      { label: 'Saturasi Koneksi', key: 'monitoring-speed', icon: ri(BandwidthIcon) },
     ],
   },
   {

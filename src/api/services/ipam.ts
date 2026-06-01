@@ -13,4 +13,5 @@ export const ipamApi = {
   poolStats: (poolId: string) => http.get(`/ip-pools/${poolId}/stats`),
   assignAddress: (poolId: string, addrId: string, data: Record<string, any>) => http.post(`/ip-pools/${poolId}/addresses/${addrId}/assign`, data),
   releaseAddress: (poolId: string, addrId: string) => http.post(`/ip-pools/${poolId}/addresses/${addrId}/release`),
+  poolByRouter: (routerId: string) => http.get(`/routers/${routerId}/ip-pool`),
 }

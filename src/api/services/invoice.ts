@@ -10,6 +10,7 @@ export const invoiceApi = {
   pay: (id: string, data: Record<string, any>) => http.post(`/invoices/${id}/pay`, data),
   payGateway: (id: string, data: Record<string, any>) => http.post(`/invoices/${id}/pay-gateway`, data),
   payments: (id: string) => http.get(`/invoices/${id}/payments`),
+  notify: (id: string) => http.post(`/invoices/${id}/notify`),
 }
 
 export const paymentApi = {

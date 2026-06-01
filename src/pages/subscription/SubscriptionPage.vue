@@ -148,12 +148,60 @@ function getStatus(status: string) {
   return statusConfig[status] || { color: '#6b7280', bg: 'rgba(107, 114, 128, 0.1)', label: status }
 }
 
+function loadSnapScript(sandbox: boolean): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const src = sandbox
+      ? 'https://app.sandbox.midtrans.com/snap/snap.js'
+      : 'https://app.midtrans.com/snap/snap.js'
+    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return }
+    const el = document.createElement('script')
+    el.src = src
+    const clientKey = tenant.value?.pg_api_key || ''
+    if (clientKey) el.setAttribute('data-client-key', clientKey)
+    el.onload = () => resolve()
+    el.onerror = () => reject(new Error('Gagal memuat Midtrans Snap.js'))
+    document.head.appendChild(el)
+  })
+}
+
+async function handlePaySnap(order: any) {
+  paying.value = order.id
+  try {
+    const sandbox = (order.payment_url as string)?.includes('sandbox') ?? false
+    await loadSnapScript(sandbox)
+    ;(window as any).snap.pay(order.snap_token, {
+      language: 'id',
+      onSuccess: async () => { await fetchData() },
+      onPending: async () => { await fetchData() },
+      onError: () => { message.error('Pembayaran gagal') },
+      onClose: async () => { await fetchData() },
+    })
+  } catch (err: any) {
+    message.error(err.message || 'Gagal membuka pembayaran')
+  } finally {
+    paying.value = null
+  }
+}
+
 async function handlePay(orderId: string) {
   paying.value = orderId
   try {
     const res = await subscriptionApi.createPayment(orderId, window.location.href)
-    const paymentURL = res.data?.data?.payment_url
-    if (paymentURL) {
+    const data = res.data?.data
+    const snapToken: string | undefined = data?.snap_token
+    const paymentURL: string | undefined = data?.payment_url
+
+    if (snapToken) {
+      const sandbox = paymentURL?.includes('sandbox') ?? false
+      await loadSnapScript(sandbox)
+      ;(window as any).snap.pay(snapToken, {
+        language: 'id',
+        onSuccess: async () => { await fetchData() },
+        onPending: async () => { await fetchData() },
+        onError: () => { message.error('Pembayaran gagal') },
+        onClose: async () => { await fetchData() },
+      })
+    } else if (paymentURL) {
       window.open(paymentURL, '_blank')
       await fetchData()
     } else {
@@ -400,7 +448,17 @@ onMounted(fetchData)
               <!-- Pay action -->
               <div v-if="order.status === 'pending'" class="oc-action">
                 <n-button
-                  v-if="order.payment_url"
+                  v-if="order.snap_token"
+                  type="warning" size="small"
+                  :loading="paying === order.id"
+                  style="border-radius:6px"
+                  @click="handlePaySnap(order)"
+                >
+                  <template #icon><n-icon :size="13"><CreditCard /></n-icon></template>
+                  Bayar Sekarang
+                </n-button>
+                <n-button
+                  v-else-if="order.payment_url"
                   type="warning" size="small"
                   tag="a" :href="order.payment_url" target="_blank"
                   style="border-radius:6px"

@@ -12,6 +12,7 @@ import {
   CubeOutline as ProductIcon,
   ChatbubblesOutline as ReminderIcon,
   MenuOutline as MenuIcon,
+  ReceiptOutline as TransaksiIcon,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
@@ -48,6 +49,7 @@ const ri = (icon: any) => () => h(NIcon, null, { default: () => h(icon) })
 const menuOptions: MenuOption[] = [
   { label: 'Dashboard', key: 'sa-dashboard', icon: ri(DashboardIcon) },
   { label: 'Tenants', key: 'sa-tenants', icon: ri(TenantIcon) },
+  { label: 'Transaksi', key: 'sa-transaksi', icon: ri(TransaksiIcon) },
   { label: 'Produk Subscribe', key: 'sa-subscription-products', icon: ri(ProductIcon) },
   { label: 'Template Pengingat', key: 'sa-subscription-reminders', icon: ri(ReminderIcon) },
   { label: 'Pengaturan', key: 'sa-settings', icon: ri(SettingsIcon) },
@@ -63,6 +65,7 @@ function onMenuSelect(key: string) {
   const map: Record<string, string> = {
     'sa-dashboard': '/superadmin',
     'sa-tenants': '/superadmin/tenants',
+    'sa-transaksi': '/superadmin/transaksi',
     'sa-subscription-products': '/superadmin/subscription-products',
     'sa-subscription-reminders': '/superadmin/subscription-reminders',
     'sa-settings': '/superadmin/settings',

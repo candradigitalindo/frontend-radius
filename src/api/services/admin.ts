@@ -42,4 +42,11 @@ export const adminApi = {
 
   // Webhook URLs for subscription payment gateway
   getWebhookUrls: () => http.get('/admin/webhook-urls'),
+
+  // Subscription Order CRUD (superadmin)
+  listSubOrders: (params?: Record<string, any>) => http.get('/admin/subscription/orders', { params }),
+  getSubOrder: (id: string) => http.get(`/admin/subscription/orders/${id}`),
+  createSubOrder: (data: Record<string, any>) => http.post('/admin/subscription/orders', data),
+  updateSubOrder: (id: string, data: Record<string, any>) => http.put(`/admin/subscription/orders/${id}`, data),
+  deleteSubOrder: (id: string) => http.delete(`/admin/subscription/orders/${id}`),
 }

@@ -21,4 +21,7 @@ export const portalApi = {
   ticketMessages: (id: string) => http.get(`/portal/tickets/${id}/messages`),
   replyTicket: (id: string, data: { message: string }) => http.post(`/portal/tickets/${id}/messages`, data),
   changePassword: (data: { current_password: string; new_password: string }) => http.put('/portal/change-password', data),
+  device: () => http.get('/portal/device'),
+  setDeviceWifi: (data: { ssid: string; password: string }) => http.put('/portal/device/wifi', data),
+  rebootDevice: () => http.post('/portal/device/reboot'),
 }

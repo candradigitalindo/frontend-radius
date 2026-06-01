@@ -259,6 +259,19 @@ function formatDate(d: string) {
   return new Date(d).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
+const syncing = ref(false)
+async function handleSync() {
+  syncing.value = true
+  try {
+    await oltApi.sync(id)
+    message.success('Data OLT berhasil disinkronisasi dari SNMP')
+    await fetchData()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || 'Gagal sinkronisasi')
+  }
+  syncing.value = false
+}
+
 onMounted(async () => {
   await Promise.all([fetchData(), fetchPorts(), fetchSnmpMonitor()])
 })
@@ -275,6 +288,9 @@ onMounted(async () => {
           <n-tag v-if="olt.status" :type="(statusMap[olt.status] || statusMap.inactive).type" size="small" round>
             {{ (statusMap[olt.status] || statusMap.inactive).label }}
           </n-tag>
+          <n-button size="small" secondary :loading="syncing" @click="handleSync" style="margin-left:auto">
+            Sinkronisasi dari SNMP
+          </n-button>
         </div>
       </template>
     </n-card>
