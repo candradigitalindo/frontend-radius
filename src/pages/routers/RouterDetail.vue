@@ -145,7 +145,7 @@ set use-radius=yes`
 
 const heartbeatScript = computed(() => {
   const token = routerData.value.heartbeat_token || '<TOKEN>'
-  const url = mikrotikConfig.value?.heartbeat_url || `${import.meta.env.VITE_API_BASE_URL || 'http://10.10.1.2/api/v1'}/routers/heartbeat`
+  const url = mikrotikConfig.value?.heartbeat_url || `${import.meta.env.VITE_API_BASE_URL}/routers/heartbeat`
   return `/system scheduler add name=radius-heartbeat interval=${DEFAULT_HEARTBEAT_INTERVAL} on-event={
   :local token "${token}"
   :local cpuLoad [/system resource get cpu-load]

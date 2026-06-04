@@ -12,6 +12,7 @@ export const tenantApi = {
   adminUpdate: (id: string, data: Record<string, any>) => http.put(`/tenants/${id}`, data),
   resetPassword: (id: string) => http.post(`/tenants/${id}/reset-password`),
   approve: (id: string) => http.post(`/tenants/${id}/approve`),
+  delete: (id: string) => http.delete(`/tenants/${id}`),
 }
 
 export const reminderApi = {

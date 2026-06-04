@@ -24,4 +24,16 @@ export const portalApi = {
   device: () => http.get('/portal/device'),
   setDeviceWifi: (data: { ssid: string; password: string }) => http.put('/portal/device/wifi', data),
   rebootDevice: () => http.post('/portal/device/reboot'),
+  payInvoiceGateway: (id: string, data: { payment_method?: string; return_url?: string }) =>
+    http.post(`/portal/invoices/${id}/pay-gateway`, data),
+  packages: () => http.get('/portal/packages'),
+  changePackage: (data: { package_id: string; package_name: string; change_type: string; notes?: string }) =>
+    http.post('/portal/change-package', data),
+  referral: () => http.get('/portal/referral'),
+  paymentConfig: () => http.get('/portal/payment-config'),
+  // Web push (PWA)
+  registerPush: (data: { fcm_token: string; device_type?: string }) =>
+    http.post('/portal/push/register', data),
+  unregisterPush: (data: { fcm_token: string }) =>
+    http.post('/portal/push/unregister', data),
 }

@@ -11,6 +11,7 @@ import {
   CheckmarkCircleOutline, CloseCircleOutline, EyeOutline, EyeOffOutline,
   InformationCircleOutline, RefreshOutline, SaveOutline, FlashOutline,
   PhonePortraitOutline, StopCircleOutline,
+  CalendarOutline, BarChartOutline, SunnyOutline, MoonOutline,
 } from '@vicons/ionicons5'
 import { adminApi } from '../../api'
 import { useThemeStore } from '../../stores/theme'
@@ -663,21 +664,21 @@ onUnmounted(() => {
 
             <div class="tz-info-cards">
               <div class="tz-info-card">
-                <div class="tz-card-icon">🕐</div>
+                <div class="tz-card-icon"><n-icon :component="CardOutline" :size="22" /></div>
                 <div class="tz-card-content">
                   <div class="tz-card-title">Billing & Invoice</div>
                   <div class="tz-card-desc">Tanggal jatuh tempo dan generate invoice menggunakan zona waktu ini</div>
                 </div>
               </div>
               <div class="tz-info-card">
-                <div class="tz-card-icon">📅</div>
+                <div class="tz-card-icon"><n-icon :component="CalendarOutline" :size="22" /></div>
                 <div class="tz-card-content">
                   <div class="tz-card-title">Jadwal Notifikasi</div>
                   <div class="tz-card-desc">Pengiriman reminder dan notifikasi otomatis disesuaikan zona waktu</div>
                 </div>
               </div>
               <div class="tz-info-card">
-                <div class="tz-card-icon">📊</div>
+                <div class="tz-card-icon"><n-icon :component="BarChartOutline" :size="22" /></div>
                 <div class="tz-card-content">
                   <div class="tz-card-title">Laporan & Statistik</div>
                   <div class="tz-card-desc">Data laporan ditampilkan dalam zona waktu yang dipilih</div>
@@ -717,7 +718,7 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="theme-label">
-                  <span class="theme-icon">☀️</span>
+                  <n-icon :component="SunnyOutline" :size="18" class="theme-icon" />
                   <span>Light</span>
                   <n-tag v-if="form.default_theme === 'light'" type="success" size="tiny" round :bordered="false">Default</n-tag>
                 </div>
@@ -737,7 +738,7 @@ onUnmounted(() => {
                   </div>
                 </div>
                 <div class="theme-label">
-                  <span class="theme-icon">🌙</span>
+                  <n-icon :component="MoonOutline" :size="18" class="theme-icon" />
                   <span>Dark</span>
                   <n-tag v-if="form.default_theme === 'dark'" type="success" size="tiny" round :bordered="false">Default</n-tag>
                 </div>
@@ -748,7 +749,8 @@ onUnmounted(() => {
               <div class="preview-live-label">Preview Tema Aktif</div>
               <div class="preview-live-badge" :class="form.default_theme">
                 <n-icon :component="ColorPaletteOutline" />
-                {{ form.default_theme === 'light' ? '☀️ Light Mode — Tampilan Terang' : '🌙 Dark Mode — Tampilan Gelap' }}
+                <n-icon :component="form.default_theme === 'light' ? SunnyOutline : MoonOutline" :size="16" />
+              {{ form.default_theme === 'light' ? 'Light Mode — Tampilan Terang' : 'Dark Mode — Tampilan Gelap' }}
               </div>
             </div>
           </div>
@@ -920,7 +922,7 @@ onUnmounted(() => {
   background: rgba(255, 23, 68, 0.03);
   border: 1px solid rgba(255, 23, 68, 0.08);
 }
-.tz-card-icon { font-size: 22px; flex-shrink: 0; }
+.tz-card-icon { font-size: 22px; flex-shrink: 0; display: flex; align-items: center; opacity: 0.7; }
 .tz-card-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
 .tz-card-desc { font-size: 12px; opacity: 0.55; line-height: 1.4; }
 
@@ -988,7 +990,7 @@ onUnmounted(() => {
 }
 .light-preview + .theme-label { background: #f8fafc; }
 .dark-preview + .theme-label { background: #1a0a0e; color: #fff; }
-.theme-icon { font-size: 16px; }
+.theme-icon { font-size: 16px; display: flex; align-items: center; }
 
 .theme-preview-live {
   padding: 16px;

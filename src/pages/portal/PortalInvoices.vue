@@ -1,21 +1,25 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { NIcon, NTag, NSpin, NEmpty } from 'naive-ui'
+import { NIcon, NTag, NSpin, NEmpty, useMessage } from 'naive-ui'
 import {
   ReceiptOutline as InvoiceIcon,
   CheckmarkCircleOutline as PaidIcon,
   TimeOutline as UnpaidIcon,
   AlertCircleOutline as OverdueIcon,
   ArrowForwardOutline as ArrowIcon,
-  FunnelOutline as FilterIcon,
+  CardOutline as PayIcon,
+  OpenOutline as OpenIcon,
 } from '@vicons/ionicons5'
 import { portalApi } from '../../api'
 
 const router = useRouter()
+const message = useMessage()
 const loading = ref(true)
 const data = ref<any[]>([])
 const activeFilter = ref<string>('all')
+const gatewayAvailable = ref(false)
+const payingId = ref<string | null>(null)
 
 const filters = [
   { key: 'all', label: 'Semua' },
@@ -26,8 +30,12 @@ const filters = [
 
 onMounted(async () => {
   try {
-    const { data: res } = await portalApi.invoices()
-    data.value = res.data || []
+    const [invRes, cfgRes] = await Promise.all([
+      portalApi.invoices(),
+      portalApi.paymentConfig(),
+    ])
+    data.value = invRes.data.data || []
+    gatewayAvailable.value = cfgRes.data.data?.available === true
   } catch { /* ignore */ }
   loading.value = false
 })
@@ -42,7 +50,9 @@ const summary = computed(() => ({
   unpaid: data.value.filter((i: any) => i.status === 'unpaid').length,
   overdue: data.value.filter((i: any) => i.status === 'overdue').length,
   paid: data.value.filter((i: any) => i.status === 'paid').length,
-  totalUnpaid: data.value.filter((i: any) => i.status === 'unpaid' || i.status === 'overdue').reduce((s: number, i: any) => s + (i.total_amount || 0), 0),
+  totalUnpaid: data.value
+    .filter((i: any) => i.status === 'unpaid' || i.status === 'overdue')
+    .reduce((s: number, i: any) => s + (i.total_amount || 0), 0),
 }))
 
 function formatCurrency(n: number) {
@@ -67,11 +77,38 @@ function statusLabel(s: string) {
   const m: Record<string, string> = { paid: 'Lunas', overdue: 'Lewat Tempo', unpaid: 'Belum Bayar' }
   return m[s] || s
 }
+
+function canPayOnline(inv: any) {
+  return gatewayAvailable.value && (inv.status === 'unpaid' || inv.status === 'overdue')
+}
+
+async function quickPay(e: Event, inv: any) {
+  e.stopPropagation()
+  payingId.value = inv.id
+  try {
+    const returnUrl = window.location.href
+    const { data: res } = await portalApi.payInvoiceGateway(inv.id, {
+      payment_method: 'qris',
+      return_url: returnUrl,
+    })
+    const payData = res.data
+    const url = payData?.checkout_url || payData?.payment_url || payData?.redirect_url
+    if (url) {
+      window.open(url, '_blank')
+    } else {
+      message.success('Pembayaran diproses')
+    }
+  } catch (err: any) {
+    message.error(err?.response?.data?.error || 'Gagal membuat link pembayaran')
+  }
+  payingId.value = null
+}
 </script>
 
 <template>
   <div class="invoices-page">
     <n-spin :show="loading" style="min-height: 200px">
+
       <!-- Summary bar -->
       <div class="summary-bar" v-if="summary.totalUnpaid > 0">
         <div class="summary-icon">
@@ -80,6 +117,10 @@ function statusLabel(s: string) {
         <div class="summary-text">
           <span class="summary-label">Total tunggakan Anda</span>
           <span class="summary-amount">{{ formatCurrency(summary.totalUnpaid) }}</span>
+        </div>
+        <div v-if="gatewayAvailable" class="summary-online-badge">
+          <n-icon :component="PayIcon" :size="13" />
+          Bayar Online Tersedia
         </div>
       </div>
 
@@ -116,7 +157,17 @@ function statusLabel(s: string) {
           <div class="inv-card-right">
             <div class="inv-card-amount">{{ formatCurrency(inv.total_amount) }}</div>
             <n-tag :type="statusType(inv.status)" size="small" round>{{ statusLabel(inv.status) }}</n-tag>
-            <n-icon :component="ArrowIcon" :size="14" class="inv-card-arrow" />
+            <!-- Tombol bayar online: hanya jika gateway aktif & produksi & belum lunas -->
+            <button
+              v-if="canPayOnline(inv)"
+              class="quick-pay-btn"
+              :disabled="payingId === inv.id"
+              @click="quickPay($event, inv)"
+            >
+              <n-icon :component="OpenIcon" :size="13" />
+              {{ payingId === inv.id ? '...' : 'Bayar' }}
+            </button>
+            <n-icon v-else :component="ArrowIcon" :size="14" class="inv-card-arrow" />
           </div>
         </div>
       </div>
@@ -124,6 +175,7 @@ function statusLabel(s: string) {
       <div v-else-if="!loading" class="empty-box">
         <n-empty description="Tidak ada tagihan ditemukan" />
       </div>
+
     </n-spin>
   </div>
 </template>
@@ -144,6 +196,7 @@ function statusLabel(s: string) {
   border-radius: 14px;
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.2);
+  flex-wrap: wrap;
 }
 
 .summary-icon {
@@ -159,13 +212,14 @@ function statusLabel(s: string) {
 }
 
 .summary-text {
+  flex: 1;
   display: flex;
   flex-direction: column;
 }
 
 .summary-label {
   font-size: 13px;
-  color: var(--app-text-muted);
+  opacity: .6;
 }
 
 .summary-amount {
@@ -174,12 +228,27 @@ function statusLabel(s: string) {
   color: #ef4444;
 }
 
+.summary-online-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: rgba(34,197,94,.1);
+  color: #22c55e;
+  border: 1px solid rgba(34,197,94,.2);
+  flex-shrink: 0;
+}
+
 /* Filters */
 .filter-row {
   display: flex;
   gap: 8px;
   overflow-x: auto;
   padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .filter-btn {
@@ -196,6 +265,7 @@ function statusLabel(s: string) {
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.2s;
+  flex-shrink: 0;
 }
 
 .filter-btn:hover { background: var(--app-accent-soft); }
@@ -248,6 +318,7 @@ function statusLabel(s: string) {
   align-items: center;
   gap: 14px;
   min-width: 0;
+  flex: 1;
 }
 
 .inv-status-icon {
@@ -264,21 +335,24 @@ function statusLabel(s: string) {
 .st-unpaid { background: rgba(245,158,11,0.1); color: #f59e0b; }
 .st-overdue { background: rgba(239,68,68,0.1); color: #ef4444; }
 
+.inv-card-info {
+  min-width: 0;
+}
+
 .inv-card-number {
   font-size: 14px;
   font-weight: 600;
-  color: var(--app-text-primary);
 }
 
 .inv-card-period {
   font-size: 12px;
-  color: var(--app-text-muted);
+  opacity: .5;
   margin-top: 2px;
 }
 
 .inv-card-due {
   font-size: 12px;
-  color: var(--app-text-muted);
+  opacity: .5;
 }
 
 .inv-card-right {
@@ -293,18 +367,52 @@ function statusLabel(s: string) {
 .inv-card-amount {
   font-size: 15px;
   font-weight: 700;
-  color: var(--app-text-primary);
 }
 
 .inv-card-arrow {
-  color: var(--app-text-muted);
   opacity: 0.3;
+}
+
+/* Quick pay button */
+.quick-pay-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity .2s;
+  white-space: nowrap;
+}
+
+.quick-pay-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.quick-pay-btn:not(:disabled):hover {
+  opacity: .9;
 }
 
 .empty-box { padding: 40px 0; }
 
 @media (max-width: 480px) {
-  .inv-card { flex-direction: column; align-items: flex-start; }
-  .inv-card-right { flex-direction: row; align-items: center; gap: 10px; width: 100%; justify-content: space-between; }
+  .inv-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .inv-card-right {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 </style>

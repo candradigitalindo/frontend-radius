@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 
 export const useThemeStore = defineStore('theme', () => {
   const mode = ref<'light' | 'dark' | 'system'>(
-    (localStorage.getItem('app_theme') as any) || 'dark'
+    (localStorage.getItem('app_theme') as any) || 'light'
   )
 
   const systemDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)

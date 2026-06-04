@@ -1,0 +1,14 @@
+{
+  "name": "D Radius Portal",
+  "short_name": "D Radius",
+  "description": "Portal pelanggan D Radius — tagihan, paket, tiket, dan notifikasi.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

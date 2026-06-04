@@ -13,7 +13,9 @@ import {
   EyeOutline as EyeIcon,
   EyeOffOutline as EyeOffIcon,
 } from '@vicons/ionicons5'
+import { NotificationsOutline as BellIcon } from '@vicons/ionicons5'
 import { portalApi } from '../../api'
+import { enablePush, pushConfigured, pushPermission } from '../../composables/usePush'
 
 const message = useMessage()
 const loading = ref(true)
@@ -21,6 +23,31 @@ const saving = ref(false)
 const profile = ref<any>({})
 const passwordForm = ref({ current_password: '', new_password: '', confirm_password: '' })
 const showPasswords = ref({ current: false, new_: false, confirm: false })
+
+// ── Web push ──
+const pushAvailable = pushConfigured()
+const pushEnabling = ref(false)
+const pushState = ref<NotificationPermission | 'unsupported'>(pushPermission())
+
+async function handleEnablePush() {
+  pushEnabling.value = true
+  try {
+    const res = await enablePush()
+    if (res.ok) {
+      pushState.value = 'granted'
+      message.success('Notifikasi berhasil diaktifkan')
+    } else if (res.reason === 'denied') {
+      pushState.value = 'denied'
+      message.warning('Izin notifikasi ditolak. Aktifkan lewat pengaturan browser.')
+    } else if (res.reason === 'unsupported') {
+      message.error('Browser ini tidak mendukung notifikasi push')
+    } else {
+      message.error('Gagal mengaktifkan notifikasi')
+    }
+  } finally {
+    pushEnabling.value = false
+  }
+}
 
 const initials = computed(() => {
   const n = profile.value.name || ''
@@ -122,6 +149,31 @@ async function handleChangePassword() {
               <span class="info-value" style="font-family: monospace">{{ profile.customer.pppoe_username }}</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Notification card -->
+      <div v-if="pushAvailable" class="password-card">
+        <div class="section-header">
+          <n-icon :component="BellIcon" :size="18" style="color: var(--app-accent)" />
+          <h3 class="section-title">Notifikasi</h3>
+        </div>
+        <div class="push-row">
+          <p class="push-desc">
+            Dapatkan pemberitahuan tagihan, pembayaran, dan info penting langsung di perangkat ini.
+          </p>
+          <div v-if="pushState === 'granted'" class="push-active">
+            <n-icon :component="CheckIcon" :size="18" />
+            <span>Notifikasi aktif</span>
+          </div>
+          <button
+            v-else
+            class="push-btn"
+            :disabled="pushEnabling"
+            @click="handleEnablePush"
+          >
+            {{ pushEnabling ? 'Mengaktifkan…' : 'Aktifkan Notifikasi' }}
+          </button>
         </div>
       </div>
 
@@ -303,6 +355,47 @@ async function handleChangePassword() {
   font-weight: 700;
   color: var(--app-text-primary);
   margin: 0;
+}
+
+.push-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.push-desc {
+  flex: 1;
+  min-width: 200px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--app-text-secondary, #888);
+  line-height: 1.5;
+}
+.push-btn {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--app-accent), #0097a7);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.push-btn:disabled { opacity: 0.6; cursor: default; }
+.push-btn:not(:disabled):hover { transform: translateY(-1px); }
+.push-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: #18a058;
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .pw-fields {

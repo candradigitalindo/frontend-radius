@@ -8,6 +8,8 @@ import {
   ChatbubbleEllipsesOutline as TicketIcon,
   PersonOutline as ProfileIcon,
   WifiOutline as DeviceIcon,
+  RocketOutline as PackageIcon,
+  PeopleOutline as ReferralIcon,
   MoonOutline as MoonIcon,
   SunnyOutline as SunIcon,
   MenuOutline as MenuIcon,
@@ -51,7 +53,9 @@ interface NavItem {
 const navItems: NavItem[] = [
   { key: 'portal-dashboard', label: 'Beranda', icon: HomeIcon, path: '/portal' },
   { key: 'portal-invoices', label: 'Tagihan', icon: InvoiceIcon, path: '/portal/invoices' },
+  { key: 'portal-package', label: 'Paket', icon: PackageIcon, path: '/portal/package' },
   { key: 'portal-device', label: 'Perangkat', icon: DeviceIcon, path: '/portal/device' },
+  { key: 'portal-referral', label: 'Referral', icon: ReferralIcon, path: '/portal/referral' },
   { key: 'portal-tickets', label: 'Bantuan', icon: TicketIcon, path: '/portal/tickets' },
   { key: 'portal-profile', label: 'Profil', icon: ProfileIcon, path: '/portal/profile' },
 ]

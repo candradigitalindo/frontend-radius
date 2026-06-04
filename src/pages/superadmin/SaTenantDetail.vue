@@ -3,11 +3,11 @@ import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NCard, NForm, NFormItem, NInput, NSwitch, NSelect, NSpin,
-  NButton, NTag, NDatePicker, NText, NIcon,
+  NButton, NTag, NDatePicker, NText, NIcon, NModal, NSpace,
   useMessage,
 } from 'naive-ui'
 import {
-  AlertCircleOutline, LogoWhatsapp, InformationCircleOutline,
+  AlertCircleOutline, LogoWhatsapp, InformationCircleOutline, TrashOutline,
 } from '@vicons/ionicons5'
 import { tenantApi } from '../../api'
 import { adminApi } from '../../api'
@@ -21,6 +21,9 @@ const loading = ref(true)
 const saving = ref(false)
 const resettingPass = ref(false)
 const approving = ref(false)
+const showDeleteModal = ref(false)
+const deleteConfirmName = ref('')
+const deleting = ref(false)
 const plans = ref<any[]>([])
 const isMobile = ref(false)
 
@@ -202,6 +205,22 @@ async function handleSave() {
     message.error(e.response?.data?.error || 'Gagal menyimpan')
   }
   saving.value = false
+}
+
+async function handleDelete() {
+  if (deleteConfirmName.value !== form.value.name) {
+    message.warning('Nama tenant tidak sesuai')
+    return
+  }
+  deleting.value = true
+  try {
+    await tenantApi.delete(id)
+    message.success('Tenant berhasil dihapus')
+    router.push('/superadmin/tenants')
+  } catch (e: any) {
+    message.error(e.response?.data?.error || 'Gagal menghapus tenant')
+  }
+  deleting.value = false
 }
 
 onMounted(() => {
@@ -463,10 +482,24 @@ onUnmounted(() => {
               size="small"
               :loading="resettingPass"
               @click="handleResetPassword"
-              style="width:100%"
+              style="width:100%;margin-bottom:10px"
             >
               <template #icon><n-icon :component="LogoWhatsapp" /></template>
               Reset Password & Kirim WA
+            </n-button>
+            <div class="delete-divider"></div>
+            <p class="action-desc" style="margin-top:10px;color:#ef4444">
+              Hapus tenant beserta seluruh data secara permanen. Tindakan ini tidak dapat dibatalkan.
+            </p>
+            <n-button
+              type="error"
+              ghost
+              size="small"
+              @click="showDeleteModal = true"
+              style="width:100%"
+            >
+              <template #icon><n-icon :component="TrashOutline" /></template>
+              Hapus Tenant
             </n-button>
           </n-card>
 
@@ -481,6 +514,38 @@ onUnmounted(() => {
 
     </div>
   </n-spin>
+
+  <!-- Delete Confirmation Modal -->
+  <n-modal
+    v-model:show="showDeleteModal"
+    preset="card"
+    title="Hapus Tenant"
+    :style="{ maxWidth: '440px', width: '95vw' }"
+    :mask-closable="false"
+  >
+    <div style="margin-bottom:16px">
+      <p style="margin:0 0 12px;line-height:1.6">
+        Tindakan ini akan menghapus <strong>{{ form.name }}</strong> beserta semua data secara permanen dan tidak dapat dibatalkan.
+      </p>
+      <p style="margin:0 0 8px;font-size:13px;opacity:0.6">Ketik nama tenant untuk konfirmasi:</p>
+      <n-input
+        v-model:value="deleteConfirmName"
+        :placeholder="form.name"
+        @keydown.enter="handleDelete"
+      />
+    </div>
+    <n-space justify="end">
+      <n-button @click="showDeleteModal = false; deleteConfirmName = ''">Batal</n-button>
+      <n-button
+        type="error"
+        :loading="deleting"
+        :disabled="deleteConfirmName !== form.name"
+        @click="handleDelete"
+      >
+        Hapus Permanen
+      </n-button>
+    </n-space>
+  </n-modal>
 </template>
 
 <style scoped>
@@ -737,6 +802,11 @@ onUnmounted(() => {
   opacity: 0.5;
   line-height: 1.55;
   margin: 0 0 10px;
+}
+.delete-divider {
+  height: 1px;
+  background: rgba(239, 68, 68, 0.15);
+  margin: 0 -2px;
 }
 
 /* ── Mobile Action Bar ── */

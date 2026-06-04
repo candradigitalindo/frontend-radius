@@ -1,26 +1,27 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { NTag, NSpin, NIcon } from 'naive-ui'
+import { NTag, NSpin, NIcon, NProgress } from 'naive-ui'
 import {
-  User as UserIcon,
-  Check as CheckIcon,
-  AlertCircle as AlertCircleIcon,
-  Bolt as BoltIcon,
-  DeviceDesktop as DeviceDesktopIcon,
-  Calendar as CalendarIcon,
-  Users as UsersIcon,
-  FileInvoice as FileInvoiceIcon,
-  CurrencyDollar as CurrencyDollarIcon,
-  MessageCircle as MessageCircleIcon,
-  FileText as FileTextIcon,
-  ArrowRight as ArrowRightIcon,
-  CircleCheck as CircleCheckIcon,
-  Clock as ClockIcon,
-  LayoutGrid as LayoutGridIcon,
-  CreditCard as CreditCardIcon,
-  Message as MessageIcon,
-} from '@vicons/tabler'
+  HomeOutline as HomeIcon,
+  CheckmarkCircleOutline as CheckIcon,
+  AlertCircleOutline as AlertIcon,
+  WifiOutline as WifiIcon,
+  SpeedometerOutline as SpeedIcon,
+  CalendarOutline as CalendarIcon,
+  PersonOutline as PersonIcon,
+  ReceiptOutline as InvoiceIcon,
+  CardOutline as CardIcon,
+  ChatbubbleEllipsesOutline as ChatIcon,
+  ChevronForwardOutline as ChevronIcon,
+  WarningOutline as WarningIcon,
+  RocketOutline as RocketIcon,
+  PeopleOutline as PeopleIcon,
+  GiftOutline as GiftIcon,
+  TimeOutline as TimeIcon,
+  ArrowUpOutline as UpIcon,
+  ArrowDownOutline as DownIcon,
+} from '@vicons/ionicons5'
 import { portalApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
 import { useThemeStore } from '../../stores/theme'
@@ -31,15 +32,24 @@ const themeStore = useThemeStore()
 const loading = ref(true)
 const profile = ref<any>({})
 const invoices = ref<any[]>([])
+const referralInfo = ref<any>(null)
+const gatewayAvailable = ref(false)
 
 onMounted(async () => {
   try {
-    const [profRes, invRes] = await Promise.all([
+    const [profRes, invRes, cfgRes] = await Promise.all([
       portalApi.customer(),
       portalApi.invoices({ per_page: 5 }),
+      portalApi.paymentConfig(),
     ])
     profile.value = profRes.data.data || profRes.data
     invoices.value = (invRes.data.data || []).slice(0, 5)
+    gatewayAvailable.value = cfgRes.data.data?.available === true
+    // load referral silently
+    try {
+      const refRes = await portalApi.referral()
+      referralInfo.value = refRes.data.data
+    } catch { /* referral optional */ }
   } catch { /* ignore */ }
   loading.value = false
 })
@@ -47,104 +57,32 @@ onMounted(async () => {
 const status = computed(() => profile.value.status || 'active')
 const statusConfig = computed(() => {
   const m: Record<string, { label: string; color: string; bg: string }> = {
-    active: { label: 'Aktif', color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
-    isolated: { label: 'Terisolir', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
-    suspended: { label: 'Ditangguhkan', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+    active: { label: 'Aktif', color: '#22c55e', bg: 'rgba(34,197,94,0.12)' },
+    isolated: { label: 'Terisolir', color: '#ef4444', bg: 'rgba(239,68,68,0.12)' },
+    suspended: { label: 'Ditangguhkan', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
   }
   return m[status.value] || m.active
 })
 
-const unpaidCount = computed(() => invoices.value.filter((i: any) => i.status === 'unpaid' || i.status === 'overdue').length)
-const totalUnpaid = computed(() => invoices.value.filter((i: any) => i.status === 'unpaid' || i.status === 'overdue').reduce((s: number, i: any) => s + (i.total_amount || 0), 0))
+const unpaidInvoices = computed(() => invoices.value.filter((i: any) => i.status === 'unpaid' || i.status === 'overdue'))
+const totalUnpaid = computed(() => unpaidInvoices.value.reduce((s: number, i: any) => s + (i.total_amount || 0), 0))
+const hasOverdue = computed(() => invoices.value.some((i: any) => i.status === 'overdue'))
 
-const heroColor = computed(() => {
-  const d = themeStore.isDark
-  return {
-    color: d ? '#60a5fa' : '#3b82f6',
-    bg: d ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.05)',
-    iconBg: d ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)',
-  }
+const greeting = computed(() => {
+  const h = new Date().getHours()
+  if (h < 12) return 'Selamat Pagi'
+  if (h < 15) return 'Selamat Siang'
+  if (h < 18) return 'Selamat Sore'
+  return 'Selamat Malam'
 })
 
-const infoCards = computed(() => {
-  const d = themeStore.isDark
-  const p = profile.value
-  const cards = [
-    {
-      label: 'Paket Internet',
-      value: p.package?.name || '-',
-      desc: p.package ? `${p.package?.bandwidth_up || '-'} / ${p.package?.bandwidth_down || '-'} Mbps` : '',
-      color: d ? '#818cf8' : '#6366f1',
-      bg: d ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.05)',
-      iconBg: d ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)',
-      icon: 'bolt',
-    },
-    {
-      label: 'Tipe Koneksi',
-      value: connectionLabel.value,
-      desc: p.ip_address || '',
-      color: d ? '#38bdf8' : '#0ea5e9',
-      bg: d ? 'rgba(14,165,233,0.08)' : 'rgba(14,165,233,0.05)',
-      iconBg: d ? 'rgba(14,165,233,0.15)' : 'rgba(14,165,233,0.1)',
-      icon: 'monitor',
-    },
-    {
-      label: 'Tanggal Tagihan',
-      value: p.billing_date ? `Setiap tanggal ${p.billing_date}` : '-',
-      desc: '',
-      color: d ? '#fbbf24' : '#d97706',
-      bg: d ? 'rgba(217,119,6,0.08)' : 'rgba(217,119,6,0.05)',
-      iconBg: d ? 'rgba(217,119,6,0.15)' : 'rgba(217,119,6,0.1)',
-      icon: 'calendar',
-    },
-    {
-      label: 'Pelanggan Sejak',
-      value: memberSince.value,
-      desc: '',
-      color: d ? '#34d399' : '#10b981',
-      bg: d ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.05)',
-      iconBg: d ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.1)',
-      icon: 'user',
-    },
-  ]
-  return cards
-})
+const packageName = computed(() => profile.value.package?.name || '-')
+const bwDown = computed(() => profile.value.package?.bandwidth_down || 0)
+const bwUp = computed(() => profile.value.package?.bandwidth_up || 0)
 
-const statCards = computed(() => {
-  const d = themeStore.isDark
-  return [
-    {
-      label: 'Tagihan Belum Lunas',
-      value: unpaidCount.value,
-      desc: 'Perlu pembayaran',
-      color: '#ef4444',
-      bg: d ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.05)',
-      iconBg: d ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
-      icon: 'invoice',
-      route: '/portal/invoices',
-    },
-    ...(totalUnpaid.value > 0 ? [{
-      label: 'Total Tunggakan',
-      value: formatCurrency(totalUnpaid.value),
-      desc: 'Belum terbayar',
-      color: d ? '#fbbf24' : '#d97706',
-      bg: d ? 'rgba(217,119,6,0.08)' : 'rgba(217,119,6,0.05)',
-      iconBg: d ? 'rgba(217,119,6,0.15)' : 'rgba(217,119,6,0.1)',
-      icon: 'money',
-      route: '/portal/invoices',
-    }] : []),
-    {
-      label: 'Bantuan Support',
-      value: 'Buat Tiket',
-      desc: 'Lapor masalah',
-      color: d ? '#818cf8' : '#6366f1',
-      bg: d ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.05)',
-      iconBg: d ? 'rgba(99,102,241,0.15)' : 'rgba(99,102,241,0.1)',
-      icon: 'chat',
-      route: '/portal/tickets',
-    },
-  ]
-})
+const rewardBalance = computed(() => referralInfo.value?.balance || 0)
+const referralCode = computed(() => referralInfo.value?.referral_code || profile.value.referral_code || '')
+const referralCount = computed(() => (referralInfo.value?.referrals || []).length)
 
 function statusType(s: string): 'success' | 'warning' | 'error' | 'info' {
   const m: Record<string, any> = { paid: 'success', overdue: 'error', unpaid: 'warning' }
@@ -159,176 +97,186 @@ function formatDate(d: string) {
   return d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
 }
 
-const greeting = computed(() => {
-  const h = new Date().getHours()
-  if (h < 12) return 'Selamat Pagi'
-  if (h < 15) return 'Selamat Siang'
-  if (h < 18) return 'Selamat Sore'
-  return 'Selamat Malam'
-})
-
-const connectionLabel = computed(() => {
-  const t = profile.value.connection_type
-  if (!t) return '-'
-  if (t === 'pppoe') return 'PPPoE'
-  if (t === 'static') return 'Static IP'
-  if (t === 'hotspot') return 'Hotspot'
-  return t.charAt(0).toUpperCase() + t.slice(1)
-})
-
-const memberSince = computed(() => {
-  const d = profile.value.join_date
-  if (!d) return '-'
-  return new Date(d).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
-})
+function copyReferral() {
+  if (referralCode.value) {
+    navigator.clipboard.writeText(referralCode.value)
+  }
+}
 </script>
 
 <template>
   <n-spin :show="loading">
-    <div class="portal-dashboard">
+    <div class="dash">
 
-      <!-- ===== Hero / Welcome ===== -->
-      <div class="hero-card" :style="{ background: heroColor.bg }">
-        <div class="hero-icon-wrap" :style="{ background: heroColor.iconBg }">
-          <n-icon size="22" :color="heroColor.color"><UserIcon /></n-icon>
+      <!-- ===== HERO ===== -->
+      <div class="hero">
+        <div class="hero-left">
+          <div class="greeting">{{ greeting }} 👋</div>
+          <div class="hero-name">{{ authStore.user?.name || 'Pelanggan' }}</div>
+          <div class="hero-sub">ID: {{ profile.customer_code || '-' }}</div>
+          <div class="hero-status">
+            <span class="status-pill" :style="{ background: statusConfig.bg, color: statusConfig.color }">
+              <n-icon v-if="status === 'active'" :component="CheckIcon" :size="13" />
+              <n-icon v-else :component="AlertIcon" :size="13" />
+              {{ statusConfig.label }}
+            </span>
+          </div>
         </div>
-        <div class="hero-body">
-          <span class="hero-greeting">{{ greeting }} 👋</span>
-          <span class="hero-name" :style="{ color: heroColor.color }">{{ authStore.user?.name || 'Pelanggan' }}</span>
-          <span class="hero-desc">ID: {{ profile.customer_code || '-' }}</span>
-        </div>
-        <div class="hero-status">
-          <span class="status-badge" :style="{ background: statusConfig.bg, color: statusConfig.color }">
-            <n-icon v-if="status === 'active'" size="12"><CheckIcon /></n-icon>
-            <n-icon v-else size="12"><AlertCircleIcon /></n-icon>
-            {{ statusConfig.label }}
-          </span>
+        <div class="hero-pkg-card">
+          <div class="pkg-label">Paket Aktif</div>
+          <div class="pkg-name">{{ packageName }}</div>
+          <div class="pkg-speed">
+            <div class="speed-row">
+              <n-icon :component="DownIcon" :size="13" color="#22c55e" />
+              <span>{{ bwDown }} Mbps</span>
+            </div>
+            <div class="speed-sep">·</div>
+            <div class="speed-row">
+              <n-icon :component="UpIcon" :size="13" color="#3b82f6" />
+              <span>{{ bwUp }} Mbps</span>
+            </div>
+          </div>
+          <button class="pkg-change-btn" @click="router.push('/portal/package')">
+            Ubah Paket <n-icon :component="ChevronIcon" :size="13" />
+          </button>
         </div>
       </div>
 
-      <!-- ===== Info Cards ===== -->
-      <div class="info-grid">
-        <div
-          v-for="(card, i) in infoCards"
-          :key="i"
-          class="info-card"
-          :style="{ background: card.bg }"
-        >
-          <div class="info-icon-wrap" :style="{ background: card.iconBg }">
-            <n-icon v-if="card.icon === 'bolt'" size="20" :color="card.color"><BoltIcon /></n-icon>
-            <n-icon v-else-if="card.icon === 'monitor'" size="20" :color="card.color"><DeviceDesktopIcon /></n-icon>
-            <n-icon v-else-if="card.icon === 'calendar'" size="20" :color="card.color"><CalendarIcon /></n-icon>
-            <n-icon v-else-if="card.icon === 'user'" size="20" :color="card.color"><UsersIcon /></n-icon>
-          </div>
-          <div class="info-body">
-            <span class="info-label">{{ card.label }}</span>
-            <span class="info-value" :style="{ color: card.color }">{{ card.value }}</span>
-            <span v-if="card.desc" class="info-desc">{{ card.desc }}</span>
-          </div>
+      <!-- ===== ALERT tagihan ===== -->
+      <div v-if="unpaidInvoices.length > 0" class="alert-banner" :class="hasOverdue ? 'alert-danger' : 'alert-warn'" @click="router.push('/portal/invoices')">
+        <n-icon :component="hasOverdue ? WarningIcon : TimeIcon" :size="20" />
+        <div class="alert-body">
+          <div class="alert-title">{{ hasOverdue ? 'Tagihan Jatuh Tempo!' : 'Tagihan Menunggu Pembayaran' }}</div>
+          <div class="alert-sub">{{ unpaidInvoices.length }} tagihan · Total {{ formatCurrency(totalUnpaid) }}</div>
         </div>
+        <div class="alert-cta">Bayar <n-icon :component="ChevronIcon" :size="14" /></div>
       </div>
 
-      <!-- ===== Stat Cards ===== -->
-      <div class="stat-grid">
-        <div
-          v-for="(card, i) in statCards"
-          :key="i"
-          class="stat-card"
-          :style="{ background: card.bg }"
-          @click="card.route && router.push(card.route)"
-        >
-          <div class="stat-icon-wrap" :style="{ background: card.iconBg }">
-            <n-icon v-if="card.icon === 'invoice'" size="20" :color="card.color"><FileInvoiceIcon /></n-icon>
-            <n-icon v-else-if="card.icon === 'money'" size="20" :color="card.color"><CurrencyDollarIcon /></n-icon>
-            <n-icon v-else-if="card.icon === 'chat'" size="20" :color="card.color"><MessageCircleIcon /></n-icon>
+      <!-- ===== STAT ROW ===== -->
+      <div class="stat-row">
+        <div class="stat-card" @click="router.push('/portal/invoices')">
+          <div class="stat-icon-wrap" style="background: rgba(14,165,233,0.1)">
+            <n-icon :component="InvoiceIcon" :size="20" color="#0ea5e9" />
           </div>
           <div class="stat-body">
-            <span class="stat-label">{{ card.label }}</span>
-            <span class="stat-value" :style="{ color: card.color }">{{ card.value }}</span>
-            <span class="stat-desc">{{ card.desc }}</span>
+            <span class="stat-val">{{ invoices.filter((i:any) => i.status !== 'paid').length }}</span>
+            <span class="stat-label">Tagihan Aktif</span>
+          </div>
+        </div>
+        <div class="stat-card" @click="router.push('/portal/referral')">
+          <div class="stat-icon-wrap" style="background: rgba(168,85,247,0.1)">
+            <n-icon :component="GiftIcon" :size="20" color="#a855f7" />
+          </div>
+          <div class="stat-body">
+            <span class="stat-val">{{ formatCurrency(rewardBalance) }}</span>
+            <span class="stat-label">Saldo Reward</span>
+          </div>
+        </div>
+        <div class="stat-card" @click="router.push('/portal/referral')">
+          <div class="stat-icon-wrap" style="background: rgba(34,197,94,0.1)">
+            <n-icon :component="PeopleIcon" :size="20" color="#22c55e" />
+          </div>
+          <div class="stat-body">
+            <span class="stat-val">{{ referralCount }}</span>
+            <span class="stat-label">Referral Sukses</span>
           </div>
         </div>
       </div>
 
-      <!-- ===== Recent Invoices ===== -->
+      <!-- ===== QUICK ACTIONS ===== -->
+      <div class="section">
+        <div class="section-title">Aksi Cepat</div>
+        <div class="quick-grid">
+          <div class="quick-card" @click="router.push('/portal/invoices')">
+            <div class="quick-icon" style="background: rgba(14,165,233,0.1)">
+              <n-icon :component="CardIcon" :size="22" color="#0ea5e9" />
+            </div>
+            <span class="quick-label">Bayar Tagihan</span>
+            <span class="quick-desc">{{ gatewayAvailable ? 'Bayar online / transfer' : 'Lihat tagihan' }}</span>
+          </div>
+          <div class="quick-card" @click="router.push('/portal/package')">
+            <div class="quick-icon" style="background: rgba(99,102,241,0.1)">
+              <n-icon :component="RocketIcon" :size="22" color="#6366f1" />
+            </div>
+            <span class="quick-label">Ganti Paket</span>
+            <span class="quick-desc">Upgrade atau downgrade</span>
+          </div>
+          <div class="quick-card" @click="router.push('/portal/device')">
+            <div class="quick-icon" style="background: rgba(6,182,212,0.1)">
+              <n-icon :component="WifiIcon" :size="22" color="#06b6d4" />
+            </div>
+            <span class="quick-label">Kelola WiFi</span>
+            <span class="quick-desc">Ubah SSID & password</span>
+          </div>
+          <div class="quick-card" @click="router.push('/portal/referral')">
+            <div class="quick-icon" style="background: rgba(168,85,247,0.1)">
+              <n-icon :component="GiftIcon" :size="22" color="#a855f7" />
+            </div>
+            <span class="quick-label">Referral</span>
+            <span class="quick-desc">Ajak teman, dapat reward</span>
+          </div>
+          <div class="quick-card" @click="router.push('/portal/tickets/create')">
+            <div class="quick-icon" style="background: rgba(245,158,11,0.1)">
+              <n-icon :component="ChatIcon" :size="22" color="#f59e0b" />
+            </div>
+            <span class="quick-label">Lapor Masalah</span>
+            <span class="quick-desc">Buat tiket bantuan</span>
+          </div>
+          <div class="quick-card" @click="router.push('/portal/profile')">
+            <div class="quick-icon" style="background: rgba(34,197,94,0.1)">
+              <n-icon :component="PersonIcon" :size="22" color="#22c55e" />
+            </div>
+            <span class="quick-label">Profil Saya</span>
+            <span class="quick-desc">Info akun & koneksi</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== REFERRAL CARD ===== -->
+      <div v-if="referralCode" class="referral-card" @click="router.push('/portal/referral')">
+        <div class="ref-left">
+          <div class="ref-title">Kode Referral Anda</div>
+          <div class="ref-code">{{ referralCode }}</div>
+          <div class="ref-sub">Ajak teman & dapatkan reward setiap bulan</div>
+        </div>
+        <div class="ref-right">
+          <button class="ref-copy-btn" @click.stop="copyReferral">Salin</button>
+          <n-icon :component="ChevronIcon" :size="18" style="opacity:.4" />
+        </div>
+      </div>
+
+      <!-- ===== TAGIHAN TERBARU ===== -->
       <div class="section">
         <div class="section-header">
-          <div class="section-title-group">
-            <div class="section-icon">
-              <n-icon size="15"><FileTextIcon /></n-icon>
-            </div>
-            <h3>Tagihan Terbaru</h3>
-          </div>
-          <button class="see-all-btn" @click="router.push('/portal/invoices')">
-            Lihat Semua
-            <n-icon size="14"><ArrowRightIcon /></n-icon>
+          <div class="section-title">Tagihan Terbaru</div>
+          <button class="see-all" @click="router.push('/portal/invoices')">
+            Lihat Semua <n-icon :component="ChevronIcon" :size="14" />
           </button>
         </div>
 
-        <div v-if="invoices.length === 0" class="empty-state">
-          <n-icon size="40" style="opacity: 0.3"><CircleCheckIcon /></n-icon>
-          <p>Tidak ada tagihan saat ini</p>
+        <div v-if="invoices.length === 0" class="empty">
+          <n-icon :component="CheckIcon" :size="40" style="opacity:.25" />
+          <span>Tidak ada tagihan</span>
         </div>
 
-        <div v-else class="invoice-list">
+        <div v-else class="inv-list">
           <div
             v-for="inv in invoices" :key="inv.id"
-            class="invoice-item"
+            class="inv-row"
             @click="router.push(`/portal/invoices/${inv.id}`)"
           >
-            <div class="inv-left">
-              <div class="inv-icon" :class="'inv-' + inv.status">
-                <n-icon v-if="inv.status === 'paid'" size="18"><CircleCheckIcon /></n-icon>
-                <n-icon v-else-if="inv.status === 'overdue'" size="18"><ClockIcon /></n-icon>
-                <n-icon v-else size="18"><ClockIcon /></n-icon>
-              </div>
-              <div class="inv-info">
-                <span class="inv-number">{{ inv.invoice_number || '#' + inv.id?.slice(0, 8) }}</span>
-                <span class="inv-date">Jatuh tempo {{ formatDate(inv.due_date) }}</span>
-              </div>
+            <div class="inv-icon-wrap" :class="'st-' + inv.status">
+              <n-icon :component="InvoiceIcon" :size="17" />
+            </div>
+            <div class="inv-info">
+              <span class="inv-num">{{ inv.invoice_number || '#' + inv.id?.slice(0,8) }}</span>
+              <span class="inv-date">Jatuh tempo {{ formatDate(inv.due_date) }}</span>
             </div>
             <div class="inv-right">
               <span class="inv-amount">{{ formatCurrency(inv.total_amount) }}</span>
-              <n-tag :type="statusType(inv.status)" size="small" round>{{ inv.status === 'paid' ? 'Lunas' : inv.status === 'overdue' ? 'Lewat Tempo' : 'Belum Bayar' }}</n-tag>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===== Quick Actions ===== -->
-      <div class="section">
-        <div class="section-title-group">
-          <div class="section-icon">
-            <n-icon size="15"><LayoutGridIcon /></n-icon>
-          </div>
-          <h3>Aksi Cepat</h3>
-        </div>
-        <div class="quick-actions">
-          <div class="action-card" @click="router.push('/portal/invoices')">
-            <div class="action-icon-wrap" :style="{ background: themeStore.isDark ? 'rgba(14,165,233,0.15)' : 'rgba(14,165,233,0.1)' }">
-              <n-icon size="20" :color="themeStore.isDark ? '#38bdf8' : '#0ea5e9'"><CreditCardIcon /></n-icon>
-            </div>
-            <div class="action-body">
-              <span class="action-label">Bayar Tagihan</span>
-              <span class="action-desc">Lunasi tagihan internet</span>
-            </div>
-          </div>
-          <div class="action-card" @click="router.push('/portal/tickets/create')">
-            <div class="action-icon-wrap" :style="{ background: themeStore.isDark ? 'rgba(129,140,248,0.15)' : 'rgba(99,102,241,0.1)' }">
-              <n-icon size="20" :color="themeStore.isDark ? '#818cf8' : '#6366f1'"><MessageIcon /></n-icon>
-            </div>
-            <div class="action-body">
-              <span class="action-label">Lapor Masalah</span>
-              <span class="action-desc">Buat tiket bantuan baru</span>
-            </div>
-          </div>
-          <div class="action-card" @click="router.push('/portal/profile')">
-            <div class="action-icon-wrap" :style="{ background: themeStore.isDark ? 'rgba(34,197,94,0.15)' : 'rgba(34,197,94,0.1)' }">
-              <n-icon size="20" :color="themeStore.isDark ? '#4ade80' : '#22c55e'"><UserIcon /></n-icon>
-            </div>
-            <div class="action-body">
-              <span class="action-label">Profil Saya</span>
-              <span class="action-desc">Lihat info akun & koneksi</span>
+              <n-tag :type="statusType(inv.status)" size="small" round>
+                {{ inv.status === 'paid' ? 'Lunas' : inv.status === 'overdue' ? 'Lewat Tempo' : 'Belum Bayar' }}
+              </n-tag>
             </div>
           </div>
         </div>
@@ -339,215 +287,228 @@ const memberSince = computed(() => {
 </template>
 
 <style scoped>
-.portal-dashboard {
+.dash {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
-/* ===== Hero Card ===== */
-.hero-card {
-  border-radius: 12px;
-  padding: 20px 18px;
+/* ===== Hero ===== */
+.hero {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  border: 1px solid transparent;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  gap: 16px;
+  align-items: stretch;
 }
 
-:root:not(.dark) .hero-card {
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root.dark .hero-card {
-  border-color: rgba(255, 255, 255, 0.06);
-}
-
-.hero-icon-wrap {
-  flex-shrink: 0;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.hero-body {
+.hero-left {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  min-width: 0;
+  gap: 4px;
+  padding: 22px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--app-border, rgba(0,0,0,.06));
+  background: var(--app-card-bg, transparent);
 }
 
-.hero-greeting {
-  font-size: 11px;
+:root.dark .hero-left {
+  border-color: rgba(255,255,255,.06);
+}
+
+.greeting {
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.5;
+  letter-spacing: .6px;
+  opacity: .45;
 }
 
 .hero-name {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 800;
-  letter-spacing: -0.5px;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: -.6px;
+  background: var(--app-logo-gradient, linear-gradient(135deg,#6366f1,#0ea5e9));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.2;
 }
 
-.hero-desc {
+.hero-sub {
   font-size: 12px;
-  opacity: 0.4;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  margin-top: 1px;
+  font-family: 'SF Mono', monospace;
+  opacity: .4;
+  margin-top: 2px;
 }
 
 .hero-status {
-  flex-shrink: 0;
+  margin-top: 8px;
 }
 
-.status-badge {
+.status-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 12px;
   font-weight: 700;
-  padding: 6px 14px;
+  padding: 5px 12px;
   border-radius: 20px;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
+  letter-spacing: .2px;
 }
 
-/* ===== Info Grid ===== */
-.info-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-}
-
-.info-card {
-  border-radius: 12px;
-  padding: 18px 16px;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  cursor: default;
-  border: 1px solid transparent;
-}
-
-:root:not(.dark) .info-card {
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root.dark .info-card {
-  border-color: rgba(255, 255, 255, 0.06);
-}
-
-.info-card:hover {
-  transform: translateY(-2px);
-}
-
-:root:not(.dark) .info-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-}
-
-:root.dark .info-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}
-
-.info-icon-wrap {
+.hero-pkg-card {
+  width: 200px;
   flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.info-body {
+  padding: 20px 18px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #6366f1, #0ea5e9);
+  color: white;
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  min-width: 0;
+  gap: 4px;
 }
 
-.info-label {
-  font-size: 11px;
+.pkg-label {
+  font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.5;
+  letter-spacing: .6px;
+  opacity: .7;
 }
 
-.info-value {
-  font-size: 16px;
+.pkg-name {
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: -0.3px;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: -.3px;
+  margin-top: 2px;
 }
 
-.info-desc {
-  font-size: 11px;
-  opacity: 0.35;
-  margin-top: 1px;
+.pkg-speed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  opacity: .85;
+  margin-top: 4px;
 }
 
-/* ===== Stat Grid ===== */
-.stat-grid {
+.speed-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.speed-sep {
+  opacity: .5;
+}
+
+.pkg-change-btn {
+  margin-top: auto;
+  padding-top: 12px;
+  background: rgba(255,255,255,.2);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background .2s;
+  margin-top: 14px;
+}
+
+.pkg-change-btn:hover {
+  background: rgba(255,255,255,.3);
+}
+
+/* ===== Alert Banner ===== */
+.alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: opacity .2s;
+}
+
+.alert-banner:hover { opacity: .9; }
+
+.alert-warn {
+  background: rgba(245,158,11,.12);
+  border: 1px solid rgba(245,158,11,.25);
+  color: #d97706;
+}
+
+.alert-danger {
+  background: rgba(239,68,68,.12);
+  border: 1px solid rgba(239,68,68,.25);
+  color: #dc2626;
+}
+
+.alert-body {
+  flex: 1;
+}
+
+.alert-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.alert-sub {
+  font-size: 12px;
+  opacity: .75;
+  margin-top: 2px;
+}
+
+.alert-cta {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ===== Stat Row ===== */
+.stat-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  gap: 12px;
 }
 
 .stat-card {
-  border-radius: 12px;
-  padding: 18px 16px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--app-border, rgba(0,0,0,.06));
   cursor: pointer;
-  border: 1px solid transparent;
-}
-
-:root:not(.dark) .stat-card {
-  border-color: rgba(0, 0, 0, 0.06);
+  transition: transform .2s, box-shadow .2s;
 }
 
 :root.dark .stat-card {
-  border-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255,255,255,.06);
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
 }
 
-:root:not(.dark) .stat-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-}
-
-:root.dark .stat-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}
-
 .stat-icon-wrap {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .stat-body {
@@ -557,35 +518,27 @@ const memberSince = computed(() => {
   min-width: 0;
 }
 
-.stat-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.5;
-}
-
-.stat-value {
-  font-size: 22px;
+.stat-val {
+  font-size: 18px;
   font-weight: 800;
-  letter-spacing: -0.5px;
-  line-height: 1.3;
+  letter-spacing: -.3px;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.stat-desc {
+.stat-label {
   font-size: 11px;
-  opacity: 0.35;
-  margin-top: 1px;
+  opacity: .5;
+  font-weight: 600;
 }
 
 /* ===== Section ===== */
 .section {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 
 .section-header {
@@ -594,119 +547,186 @@ const memberSince = computed(() => {
   justify-content: space-between;
 }
 
-.section-title-group {
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  opacity: .75;
+}
+
+.see-all {
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--app-accent, #6366f1);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background .2s;
+}
+
+.see-all:hover {
+  background: rgba(99,102,241,.06);
+}
+
+/* ===== Quick Grid ===== */
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.quick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--app-border, rgba(0,0,0,.06));
+  cursor: pointer;
+  text-align: center;
+  transition: transform .2s, box-shadow .2s;
+}
+
+:root.dark .quick-card {
+  border-color: rgba(255,255,255,.06);
+}
+
+.quick-card:hover {
+  transform: translateY(-3px);
+}
+
+:root:not(.dark) .quick-card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,.06);
+}
+
+:root.dark .quick-card:hover {
+  box-shadow: 0 6px 20px rgba(0,0,0,.2);
+}
+
+.quick-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quick-label {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.quick-desc {
+  font-size: 11px;
+  opacity: .4;
+  line-height: 1.3;
+}
+
+/* ===== Referral Card ===== */
+.referral-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(168,85,247,.08), rgba(99,102,241,.08));
+  border: 1px solid rgba(168,85,247,.2);
+  cursor: pointer;
+  transition: opacity .2s;
+}
+
+.referral-card:hover { opacity: .9; }
+
+.ref-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ref-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  opacity: .5;
+}
+
+.ref-code {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #a855f7;
+  font-family: 'SF Mono', monospace;
+}
+
+.ref-sub {
+  font-size: 11px;
+  opacity: .45;
+  margin-top: 2px;
+}
+
+.ref-right {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.section-icon {
-  width: 30px;
-  height: 30px;
+.ref-copy-btn {
+  padding: 6px 14px;
   border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-:root:not(.dark) .section-icon {
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
-}
-
-:root.dark .section-icon {
-  background: rgba(129, 140, 248, 0.12);
-  color: #818cf8;
-}
-
-.section-title-group h3 {
-  font-size: 13px;
-  font-weight: 600;
-  margin: 0;
-}
-
-.see-all-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  border: none;
-  background: none;
+  border: 1px solid rgba(168,85,247,.4);
+  background: rgba(168,85,247,.1);
+  color: #a855f7;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 8px;
-  transition: background 0.2s;
+  transition: background .2s;
 }
 
-:root:not(.dark) .see-all-btn {
-  color: #6366f1;
-}
-
-:root.dark .see-all-btn {
-  color: #818cf8;
-}
-
-:root:not(.dark) .see-all-btn:hover {
-  background: rgba(99, 102, 241, 0.06);
-}
-
-:root.dark .see-all-btn:hover {
-  background: rgba(129, 140, 248, 0.08);
+.ref-copy-btn:hover {
+  background: rgba(168,85,247,.2);
 }
 
 /* ===== Invoice List ===== */
-.invoice-list {
+.inv-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.invoice-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 14px 16px;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-:root:not(.dark) .invoice-item {
-  background: rgba(0, 0, 0, 0.02);
-  border-color: rgba(0, 0, 0, 0.04);
-}
-
-:root.dark .invoice-item {
-  background: rgba(255, 255, 255, 0.02);
-  border-color: rgba(255, 255, 255, 0.04);
-}
-
-.invoice-item:hover {
-  transform: translateX(3px);
-}
-
-:root:not(.dark) .invoice-item:hover {
-  background: rgba(0, 0, 0, 0.03);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-}
-
-:root.dark .invoice-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.inv-left {
+.inv-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--app-border, rgba(0,0,0,.05));
+  cursor: pointer;
+  transition: all .2s;
 }
 
-.inv-icon {
+:root:not(.dark) .inv-row {
+  background: rgba(0,0,0,.015);
+}
+
+:root.dark .inv-row {
+  background: rgba(255,255,255,.02);
+  border-color: rgba(255,255,255,.05);
+}
+
+.inv-row:hover {
+  transform: translateX(3px);
+}
+
+.inv-icon-wrap {
   width: 38px;
   height: 38px;
   border-radius: 10px;
@@ -716,28 +736,29 @@ const memberSince = computed(() => {
   flex-shrink: 0;
 }
 
-.inv-paid { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-.inv-unpaid { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-.inv-overdue { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.st-paid { background: rgba(34,197,94,.1); color: #22c55e; }
+.st-unpaid { background: rgba(245,158,11,.1); color: #f59e0b; }
+.st-overdue { background: rgba(239,68,68,.1); color: #ef4444; }
 
 .inv-info {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
-.inv-number {
+.inv-num {
   font-size: 13px;
   font-weight: 600;
 }
 
 .inv-date {
   font-size: 11px;
-  opacity: 0.45;
+  opacity: .45;
 }
 
 .inv-right {
-  text-align: right;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -746,188 +767,85 @@ const memberSince = computed(() => {
 }
 
 .inv-amount {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-/* ===== Quick Actions ===== */
-.quick-actions {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-}
-
-.action-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 14px;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-:root:not(.dark) .action-card {
-  background: rgba(0, 0, 0, 0.02);
-  border-color: rgba(0, 0, 0, 0.06);
-}
-
-:root.dark .action-card {
-  background: rgba(255, 255, 255, 0.02);
-  border-color: rgba(255, 255, 255, 0.06);
-}
-
-.action-card:hover {
-  transform: translateY(-2px);
-}
-
-:root:not(.dark) .action-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-}
-
-:root.dark .action-card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}
-
-.action-icon-wrap {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.action-body {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.action-label {
   font-size: 13px;
   font-weight: 700;
 }
 
-.action-desc {
-  font-size: 11px;
-  opacity: 0.35;
-}
-
-/* ===== Empty State ===== */
-.empty-state {
-  text-align: center;
-  padding: 40px 20px;
+.empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  border-radius: 12px;
-  opacity: 0.6;
-}
-
-:root:not(.dark) .empty-state {
-  background: rgba(0, 0, 0, 0.02);
-  border: 1px dashed rgba(0, 0, 0, 0.08);
-}
-
-:root.dark .empty-state {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px dashed rgba(255, 255, 255, 0.06);
-}
-
-.empty-state p {
+  padding: 40px;
+  border-radius: 14px;
+  border: 1px dashed var(--app-border, rgba(0,0,0,.08));
+  opacity: .5;
   font-size: 13px;
-  margin: 0;
 }
 
 /* ===== Responsive ===== */
-@media (max-width: 1024px) {
-  .info-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .stat-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 @media (max-width: 768px) {
-  .portal-dashboard {
-    gap: 16px;
-  }
-
-  .hero-card {
-    flex-wrap: wrap;
-  }
-
-  .info-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-  }
-
-  .info-card {
-    padding: 14px 12px;
+  .hero {
     flex-direction: column;
-    align-items: flex-start;
+  }
+
+  .hero-pkg-card {
+    width: 100%;
+  }
+
+  .stat-row {
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
   }
 
-  .info-icon-wrap {
-    width: 36px;
-    height: 36px;
-  }
-
-  .info-value {
+  .stat-val {
     font-size: 14px;
   }
 
-  .info-desc {
+  .quick-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .quick-card {
+    padding: 14px 8px;
+  }
+
+  .quick-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .quick-label {
+    font-size: 11px;
+  }
+
+  .quick-desc {
     display: none;
-  }
-
-  .stat-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .stat-card {
-    flex-direction: row;
-    align-items: flex-start;
-  }
-
-  .quick-actions {
-    grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 480px) {
-  .info-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .hero-name {
+    font-size: 22px;
+  }
+
+  .stat-row {
+    gap: 6px;
+  }
+
+  .stat-card {
+    padding: 12px;
     gap: 8px;
   }
 
-  .info-card {
-    padding: 12px 10px;
+  .stat-icon-wrap {
+    width: 36px;
+    height: 36px;
   }
 
-  .info-label {
-    font-size: 10px;
-  }
-
-  .info-value {
-    font-size: 13px;
-  }
-
-  .hero-name {
-    font-size: 18px;
-  }
-
-  .hero-icon-wrap {
-    width: 40px;
-    height: 40px;
+  .quick-grid {
+    grid-template-columns: repeat(3, 1fr);
   }
 }
 </style>
