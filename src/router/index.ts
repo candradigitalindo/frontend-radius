@@ -132,6 +132,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'olts/:id', name: 'olt-detail', component: () => import('../pages/olts/OltDetail.vue') },
       { path: 'odps', name: 'odps', component: () => import('../pages/odps/OdpList.vue') },
       { path: 'odps/:id', name: 'odp-detail', component: () => import('../pages/odps/OdpDetail.vue') },
+      { path: 'map', name: 'network-map', component: () => import('../pages/network/NetworkMapPage.vue') },
       // Vouchers
       { path: 'vouchers', name: 'vouchers', component: () => import('../pages/vouchers/VoucherList.vue') },
       // Expenses
