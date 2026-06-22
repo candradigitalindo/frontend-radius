@@ -263,7 +263,7 @@ const tplValues = ref<Record<string, string>>({
 })
 
 const TPL_VARS: Record<string, string[]> = {
-  invoice_created: ['{salam}', '{nama}', '{nomor_invoice}', '{periode}', '{paket}', '{jumlah}', '{jatuh_tempo}', '{kode_pelanggan}', '{alamat}', '{payment_url}'],
+  invoice_created: ['{salam}', '{nama}', '{nomor_invoice}', '{periode}', '{paket}', '{jumlah}', '{jatuh_tempo}', '{kode_pelanggan}', '{alamat}', '{payment_url}', '{link_bayar}'],
   payment_confirmation: ['{salam}', '{nama}', '{nomor_invoice}', '{periode}', '{paket}', '{jumlah}', '{metode_bayar}', '{waktu_bayar}', '{kode_pelanggan}', '{alamat}'],
 }
 

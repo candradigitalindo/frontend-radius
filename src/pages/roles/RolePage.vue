@@ -186,6 +186,48 @@ const roleColors: Record<string, string> = {
 function roleColor(slug: string): string {
   return roleColors[slug] || '#8b5cf6'
 }
+
+const sectionLabels: Record<string, string> = {
+  dashboard:    'Dashboard',
+  pelanggan:    'Pelanggan',
+  keuangan:     'Keuangan',
+  jaringan:     'Jaringan',
+  layanan:      'Layanan',
+  marketing:    'Marketing',
+  administrasi: 'Administrasi',
+}
+
+const sectionColors: Record<string, string> = {
+  dashboard:    '#64748b',
+  pelanggan:    '#3b82f6',
+  keuangan:     '#22c55e',
+  jaringan:     '#f59e0b',
+  layanan:      '#8b5cf6',
+  marketing:    '#ec4899',
+  administrasi: '#ef4444',
+}
+
+interface PermSection { key: string; label: string; color: string; groups: any[] }
+
+const permSections = computed((): PermSection[] => {
+  const order = ['dashboard', 'pelanggan', 'keuangan', 'jaringan', 'layanan', 'marketing', 'administrasi']
+  const map = new Map<string, PermSection>()
+  for (const g of permGroups.value) {
+    const sk = g.section || 'lainnya'
+    if (!map.has(sk)) {
+      map.set(sk, { key: sk, label: sectionLabels[sk] || sk, color: sectionColors[sk] || '#94a3b8', groups: [] })
+    }
+    map.get(sk)!.groups.push(g)
+  }
+  const result: PermSection[] = []
+  for (const k of order) {
+    if (map.has(k)) result.push(map.get(k)!)
+  }
+  for (const [k, v] of map) {
+    if (!order.includes(k)) result.push(v)
+  }
+  return result
+})
 </script>
 
 <template>
@@ -350,35 +392,41 @@ function roleColor(slug: string): string {
           </div>
         </div>
 
-        <!-- Per-group permission list -->
+        <!-- Per-group permission list grouped by section -->
         <div class="d-groups">
-          <div v-for="group in permGroups" :key="group.key" class="d-group">
-            <div class="d-group-head">
-              <span class="d-group-name">{{ group.label }}</span>
-              <div class="d-group-meta">
-                <span class="d-group-count">{{ groupPermCount(detailRole, group) }}</span>
-                <div class="d-mini-prog">
-                  <div
-                    class="d-mini-fill"
-                    :style="{ width: `${groupPermPercent(detailRole, group)}%`, background: roleColor(detailRole.slug) }"
-                  />
+          <template v-for="section in permSections" :key="section.key">
+            <div class="d-section-head" :style="{ borderLeftColor: section.color }">
+              <span class="d-section-dot" :style="{ background: section.color }" />
+              <span class="d-section-label">{{ section.label }}</span>
+            </div>
+            <div v-for="group in section.groups" :key="group.key" class="d-group">
+              <div class="d-group-head">
+                <span class="d-group-name">{{ group.label }}</span>
+                <div class="d-group-meta">
+                  <span class="d-group-count">{{ groupPermCount(detailRole, group) }}</span>
+                  <div class="d-mini-prog">
+                    <div
+                      class="d-mini-fill"
+                      :style="{ width: `${groupPermPercent(detailRole, group)}%`, background: section.color }"
+                    />
+                  </div>
                 </div>
               </div>
+              <div class="d-perm-chips">
+                <span
+                  v-for="p in group.permissions"
+                  :key="p.key"
+                  class="d-pchip"
+                  :class="{ active: detailRole.permissions?.includes(p.key) }"
+                  :style="detailRole.permissions?.includes(p.key) ? { background: `${section.color}15`, color: section.color, borderColor: `${section.color}30` } : {}"
+                >
+                  <n-icon v-if="detailRole.permissions?.includes(p.key)" :component="Check" :size="11" />
+                  <n-icon v-else :component="XIcon" :size="11" />
+                  {{ p.label }}
+                </span>
+              </div>
             </div>
-            <div class="d-perm-chips">
-              <span
-                v-for="p in group.permissions"
-                :key="p.key"
-                class="d-pchip"
-                :class="{ active: detailRole.permissions?.includes(p.key) }"
-                :style="detailRole.permissions?.includes(p.key) ? { background: `${roleColor(detailRole.slug)}15`, color: roleColor(detailRole.slug), borderColor: `${roleColor(detailRole.slug)}30` } : {}"
-              >
-                <n-icon v-if="detailRole.permissions?.includes(p.key)" :component="Check" :size="11" />
-                <n-icon v-else :component="XIcon" :size="11" />
-                {{ p.label }}
-              </span>
-            </div>
-          </div>
+          </template>
         </div>
 
         <!-- Actions -->
@@ -419,28 +467,35 @@ function roleColor(slug: string): string {
       </n-form-item>
       <n-form-item label="Permission" label-placement="top">
         <div class="perm-editor">
-          <n-collapse :default-expanded-names="permGroups.map((g: any) => g.key)">
-            <n-collapse-item v-for="group in permGroups" :key="group.key" :name="group.key">
-              <template #header>
-                <div class="perm-group-header" @click.stop>
-                  <n-checkbox
-                    :checked="isGroupAllSelected(group.permissions)"
-                    :indeterminate="isGroupPartial(group.permissions)"
-                    @update:checked="toggleGroupAll(group.permissions)"
-                  />
-                  <span class="perm-group-name">{{ group.label }}</span>
-                  <span class="perm-group-count">
-                    {{ group.permissions.filter((p: any) => form.permissions.includes(p.key)).length }}/{{ group.permissions.length }}
-                  </span>
-                </div>
-              </template>
-              <n-checkbox-group v-model:value="form.permissions">
-                <div class="perm-items">
-                  <n-checkbox v-for="p in group.permissions" :key="p.key" :value="p.key" :label="p.label" />
-                </div>
-              </n-checkbox-group>
-            </n-collapse-item>
-          </n-collapse>
+          <div v-for="(section, si) in permSections" :key="section.key">
+            <div class="perm-section-header" :style="{ borderLeftColor: section.color }">
+              <span class="perm-section-dot" :style="{ background: section.color }" />
+              <span class="perm-section-label">{{ section.label }}</span>
+            </div>
+            <n-collapse :default-expanded-names="section.groups.map((g: any) => g.key)">
+              <n-collapse-item v-for="group in section.groups" :key="group.key" :name="group.key">
+                <template #header>
+                  <div class="perm-group-header" @click.stop>
+                    <n-checkbox
+                      :checked="isGroupAllSelected(group.permissions)"
+                      :indeterminate="isGroupPartial(group.permissions)"
+                      @update:checked="toggleGroupAll(group.permissions)"
+                    />
+                    <span class="perm-group-name">{{ group.label }}</span>
+                    <span class="perm-group-count">
+                      {{ group.permissions.filter((p: any) => form.permissions.includes(p.key)).length }}/{{ group.permissions.length }}
+                    </span>
+                  </div>
+                </template>
+                <n-checkbox-group v-model:value="form.permissions">
+                  <div class="perm-items">
+                    <n-checkbox v-for="p in group.permissions" :key="p.key" :value="p.key" :label="p.label" />
+                  </div>
+                </n-checkbox-group>
+              </n-collapse-item>
+            </n-collapse>
+            <div v-if="si < permSections.length - 1" class="perm-section-gap" />
+          </div>
         </div>
       </n-form-item>
       <div class="modal-foot">
@@ -810,6 +865,27 @@ function roleColor(slug: string): string {
 }
 :root.dark .d-group-head { background: rgba(255,255,255,0.02); }
 
+.d-section-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px 4px;
+  border-left: 3px solid;
+  margin: 8px 0 4px;
+}
+.d-section-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.d-section-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  opacity: 0.7;
+}
+
 .d-group-name  { font-size: 12px; font-weight: 700; opacity: 0.7; }
 
 .d-group-meta {
@@ -871,14 +947,44 @@ function roleColor(slug: string): string {
 /* ── Permission Editor ──────────────────────────── */
 .perm-editor {
   width: 100%;
-  max-height: 380px;
+  max-height: 420px;
   overflow-y: auto;
   border: 1px solid rgba(128,128,128,0.1);
   border-radius: 10px;
-  padding: 4px;
+  padding: 8px;
   scrollbar-width: thin;
 }
 :root.dark .perm-editor { border-color: rgba(255,255,255,0.08); }
+
+.perm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px 4px;
+  border-left: 3px solid;
+  margin-bottom: 2px;
+}
+
+.perm-section-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.perm-section-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  opacity: 0.75;
+}
+
+.perm-section-gap {
+  height: 10px;
+  border-bottom: 1px dashed rgba(128,128,128,0.12);
+  margin: 4px 0 10px;
+}
+:root.dark .perm-section-gap { border-bottom-color: rgba(255,255,255,0.07); }
 
 .perm-group-header {
   display: flex;

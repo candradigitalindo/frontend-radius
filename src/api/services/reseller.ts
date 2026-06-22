@@ -10,6 +10,6 @@ export const resellerApi = {
   addCommission: (id: string, data: Record<string, any>) => http.post(`/resellers/${id}/commissions`, data),
   commissions: (id: string, params?: Record<string, any>) => http.get(`/resellers/${id}/commissions`, { params }),
   commissionSummary: (id: string) => http.get(`/resellers/${id}/commission-summary`),
-  payAll: (id: string) => http.post(`/resellers/${id}/pay-all`),
+  payAll: (id: string) => http.post(`/resellers/${id}/commissions/pay-all`),
   payCommission: (commissionId: string) => http.post(`/resellers/commissions/${commissionId}/pay`),
 }

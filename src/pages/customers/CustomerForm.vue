@@ -6,7 +6,7 @@ import {
   NSpace, NSteps, NStep, NDivider, NAlert, NText, NDatePicker, NIcon, useMessage
 } from 'naive-ui'
 import { Edit, UserPlus } from '@vicons/tabler'
-import { customerApi, packageApi, routerApi, odpApi, dashboardApi } from '../../api'
+import { customerApi, packageApi, routerApi, odpApi, dashboardApi, resellerApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
 
 const router = useRouter()
@@ -62,10 +62,14 @@ const form = ref({
   fee_description: '',
   notes: '',
   referral_code_used: '',
+  latitude: null as number | null,
+  longitude: null as number | null,
+  reseller_id: null as string | null,
 })
 
 const packages = ref<any[]>([])
 const routers = ref<any[]>([])
+const resellers = ref<any[]>([])
 const odps = ref<any[]>([])
 const odpPorts = ref<any[]>([])
 const selectedOdpId = ref<string | null>(null)
@@ -76,6 +80,10 @@ const packageOptions = computed(() => packages.value.map((p: any) => ({
   value: p.id,
 })))
 const routerOptions = computed(() => routers.value.map((r: any) => ({ label: r.name, value: r.id })))
+const resellerOptions = computed(() => resellers.value.map((r: any) => ({
+  label: `${r.name}${r.commission_rate ? ` (${r.commission_rate}%)` : ''}`,
+  value: r.id,
+})))
 const odpOptions = computed(() => odps.value.map((o: any) => ({ label: o.name, value: o.id })))
 const odpPortOptions = computed(() => odpPorts.value.map((p: any) => ({
   label: `Port ${p.port_number}${p.notes ? ` – ${p.notes}` : ''}`,
@@ -195,12 +203,16 @@ function prevStep() {
 onMounted(async () => {
   loading.value = true
   try {
-    const promises: Promise<any>[] = [packageApi.list(), routerApi.list(), odpApi.list()]
+    const promises: Promise<any>[] = [
+      packageApi.list(), routerApi.list(), odpApi.list(),
+      resellerApi.list({ status: 'active', per_page: 100 }).catch(() => ({ data: { data: [] } })),
+    ]
 
     const results = await Promise.all(promises)
     packages.value = results[0].data?.data || []
     routers.value = results[1].data?.data || []
     odps.value = results[2].data?.data || []
+    resellers.value = results[3].data?.data || []
 
     if (isEdit.value) {
       const { data } = await customerApi.get(route.params.id as string)
@@ -233,6 +245,9 @@ onMounted(async () => {
         additional_fee: c.additional_fee || 0,
         fee_description: c.fee_description || '',
         notes: c.notes || '',
+        latitude: c.latitude ?? null,
+        longitude: c.longitude ?? null,
+        reseller_id: c.reseller_id ?? null,
       })
       if (c.connection_type === 'ftth' && c.odp_port?.odp_id) {
         selectedOdpId.value = c.odp_port.odp_id
@@ -397,6 +412,16 @@ async function handleSubmit() {
           <n-form-item label="Catatan">
             <n-input v-model:value="form.notes" type="textarea" placeholder="Catatan internal (opsional)" :rows="2" />
           </n-form-item>
+          <n-form-item label="Reseller">
+            <n-select v-model:value="form.reseller_id" :options="resellerOptions" clearable filterable placeholder="Tanpa reseller" />
+          </n-form-item>
+          <n-divider title-placement="left" style="font-size: 13px">Lokasi Modem (untuk Peta Jaringan)</n-divider>
+          <n-form-item label="Latitude">
+            <n-input-number v-model:value="form.latitude" :precision="6" style="width:100%" placeholder="Contoh: -6.914744" />
+          </n-form-item>
+          <n-form-item label="Longitude">
+            <n-input-number v-model:value="form.longitude" :precision="6" style="width:100%" placeholder="Contoh: 107.609810" />
+          </n-form-item>
         </template>
 
         <!-- Section: Paket & Tagihan -->
@@ -523,6 +548,17 @@ async function handleSubmit() {
         <n-form-item label="Catatan">
           <n-input v-model:value="form.notes" type="textarea" placeholder="Catatan internal (opsional)" :rows="2" />
         </n-form-item>
+        <n-form-item label="Reseller">
+          <n-select v-model:value="form.reseller_id" :options="resellerOptions" clearable filterable placeholder="Tanpa reseller" />
+        </n-form-item>
+        <n-divider title-placement="left" style="font-size: 13px">Lokasi Modem (untuk Peta Jaringan)</n-divider>
+        <n-form-item label="Latitude">
+          <n-input-number v-model:value="form.latitude" :precision="6" style="width:100%" placeholder="Contoh: -6.914744" />
+        </n-form-item>
+        <n-form-item label="Longitude">
+          <n-input-number v-model:value="form.longitude" :precision="6" style="width:100%" placeholder="Contoh: 107.609810" />
+        </n-form-item>
+
         <!-- Kode Referral hanya tampil saat buat pelanggan baru -->
         <n-form-item v-if="!isEdit" label="Kode Referral">
           <n-input

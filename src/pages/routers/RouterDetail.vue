@@ -64,10 +64,6 @@ const vpnKeySubmitting = ref(false)
 const vpnStatus = ref<any>(null)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-const DEFAULT_RADIUS_ADDRESS = '10.10.0.1'
-const DEFAULT_COA_PORT = 3799
-const DEFAULT_HEARTBEAT_INTERVAL = '00:05:00'
-
 // Mode koneksi: 'direct' = IP Publik (ROS 6 & 7), 'wireguard' = VPN WireGuard (ROS 7+)
 const connectionMode = ref<'direct' | 'wireguard'>('direct')
 
@@ -80,62 +76,63 @@ function onResize() {
 onMounted(() => window.addEventListener('resize', onResize))
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
-const serverIP = computed(() => DEFAULT_RADIUS_ADDRESS)
+// Semua nilai panduan MikroTik berasal dari backend (endpoint mikrotik-config),
+// dengan cadangan ke data router (juga backend). Tidak ada nilai hardcode.
+const cfg = computed<any>(() => mikrotikConfig.value || {})
 
-const effectiveServerPublicIP = computed(() => serverPublicIP.value || '<SERVER_PUBLIC_IP>')
+const effectiveServerPublicIP = computed(() => cfg.value.server_endpoint || serverPublicIP.value || '')
 
-const effectiveServerPublicKey = computed(() => serverPublicKey.value || '<SERVER_PUBLIC_KEY>')
+const effectiveServerPublicKey = computed(() => cfg.value.server_public_key || serverPublicKey.value || '')
 
-// Di mode direct, RADIUS mengarah ke IP publik server, bukan VPN IP
+// Di mode direct, RADIUS mengarah ke IP publik server; di mode wireguard ke VPN IP server.
 const effectiveRadiusAddress = computed(() =>
   connectionMode.value === 'direct'
-    ? (serverPublicIP.value || '<SERVER_PUBLIC_IP>')
-    : (mikrotikConfig.value?.server_vpn_ip || DEFAULT_RADIUS_ADDRESS)
+    ? effectiveServerPublicIP.value
+    : (cfg.value.server_vpn_ip || '')
 )
+
+const vpnListenPort = computed(() => cfg.value.vpn_listen_port || '')
+const vpnSubnet = computed(() => cfg.value.vpn_subnet || '')
+const wgRouterPort = computed(() => cfg.value.wg_router_port || '')
+const coaPort = computed(() => cfg.value.coa_port || routerData.value.coa_port || '')
+const heartbeatInterval = computed(() => cfg.value.heartbeat_interval || '')
+const heartbeatUrl = computed(() => cfg.value.heartbeat_url || '')
+const routerVpnIP = computed(() => cfg.value.vpn_ip || routerData.value.vpn_ip || '')
+const radiusSecret = computed(() => cfg.value.radius_secret || routerData.value.radius_secret || '')
+const heartbeatToken = computed(() => cfg.value.heartbeat_token || routerData.value.heartbeat_token || '')
 
 const wgInterfaceBlock1 = computed(() => {
   return `/interface wireguard
-add name=wg0 listen-port=13231`
+add name=wg0 listen-port=${wgRouterPort.value}`
 })
 
 const wgInterfaceBlock2 = computed(() => {
-  const vpnIP = routerData.value.vpn_ip || '<VPN_IP>'
+  const vpnIP = routerVpnIP.value
+  const network = vpnIP ? vpnIP.replace(/\.\d+$/, '.0') : ''
   return `/ip address
-add address=${vpnIP}/24 interface=wg0 network=${vpnIP.replace(/\.\d+$/, '.0')}`
+add address=${vpnIP}/24 interface=wg0 network=${network}`
 })
 
 const wgPeerScript = computed(() => {
-  const pubKey = effectiveServerPublicKey.value
-  const pubIP = effectiveServerPublicIP.value
-  const port = mikrotikConfig.value?.vpn_listen_port || '51820'
-  const subnet = mikrotikConfig.value?.vpn_subnet || '10.10.0.0/24'
   return `/interface wireguard peers
 add interface=wg0 \\
-    public-key="${pubKey}" \\
-    allowed-address=${subnet} \\
-    endpoint-address=${pubIP} \\
-    endpoint-port=${port} \\
+    public-key="${effectiveServerPublicKey.value}" \\
+    allowed-address=${vpnSubnet.value} \\
+    endpoint-address=${effectiveServerPublicIP.value} \\
+    endpoint-port=${vpnListenPort.value} \\
     persistent-keepalive=25s`
 })
 
 const radiusBlock1 = computed(() => {
-  const d = routerData.value
   return `/radius
 add address=${effectiveRadiusAddress.value} \\
-    secret="${d.radius_secret || '<SECRET>'}" \\
+    secret="${radiusSecret.value}" \\
     service=hotspot,ppp,login`
 })
 
 const radiusBlock2 = computed(() => {
-  const d = routerData.value
-  const coaPort = d.coa_port || DEFAULT_COA_PORT
   return `/radius incoming
-set accept=yes port=${coaPort}`
-})
-
-const pppoeBlock1 = computed(() => {
-  return `/ip hotspot profile
-set [find] use-radius=yes login-by=pap`
+set accept=yes port=${coaPort.value}`
 })
 
 const pppoeBlock2 = computed(() => {
@@ -144,10 +141,8 @@ set use-radius=yes`
 })
 
 const heartbeatScript = computed(() => {
-  const token = routerData.value.heartbeat_token || '<TOKEN>'
-  const url = mikrotikConfig.value?.heartbeat_url || `${import.meta.env.VITE_API_BASE_URL}/routers/heartbeat`
-  return `/system scheduler add name=radius-heartbeat interval=${DEFAULT_HEARTBEAT_INTERVAL} on-event={
-  :local token "${token}"
+  return `/system scheduler add name=radius-heartbeat interval=${heartbeatInterval.value} on-event={
+  :local token "${heartbeatToken.value}"
   :local cpuLoad [/system resource get cpu-load]
   :local freeMem [/system resource get free-memory]
   :local totalMem [/system resource get total-memory]
@@ -156,9 +151,247 @@ const heartbeatScript = computed(() => {
   :local osVer [/system resource get version]
   :local identity [/system identity get name]
   :local payload "{\\"token\\":\\"$token\\",\\"identity\\":\\"$identity\\",\\"cpu_load\\":$cpuLoad,\\"free_memory\\":$freeMem,\\"total_memory\\":$totalMem,\\"uptime\\":\\"$uptime\\",\\"board_name\\":\\"$boardName\\",\\"router_os_ver\\":\\"$osVer\\"}"
-  /tool fetch url="${url}" http-method=post http-header-field="Content-Type: application/json" http-data=\$payload output=none
+  /tool fetch url="${heartbeatUrl.value}" http-method=post http-header-field="Content-Type: application/json" http-data=\$payload output=none
 } comment="Radius Heartbeat"
 `
+})
+
+// Tab aktif pada modal panduan
+const activeGuideTab = ref('persiapan')
+
+// ── Tab 1: Persiapan — Modem ISP → MikroTik (WAN) ───────────────────────────
+// Nilai ISP & port bersifat spesifik per-pelanggan, jadi disajikan sebagai contoh
+// yang harus disesuaikan (bukan data dari server).
+const wanDhcpScript = `# Opsi A — Modem ISP mode Router (memberi IP otomatis ke MikroTik)
+/ip dhcp-client add interface=ether1 use-peer-dns=yes add-default-route=yes disabled=no`
+
+const wanPppoeScript = `# Opsi B — Modem ISP mode Bridge (MikroTik yang dial PPPoE ke ISP)
+/interface pppoe-client add name=wan-isp interface=ether1 \\
+    user=USERNAME_ISP password=PASSWORD_ISP \\
+    add-default-route=yes use-peer-dns=yes disabled=no`
+
+const wanNatScript = `# Agar pelanggan bisa akses internet (NAT)
+/interface list add name=WAN
+/interface list member add list=WAN interface=ether1
+/ip firewall nat add chain=srcnat out-interface-list=WAN action=masquerade`
+
+const wanDnsScript = `/ip dns set servers=8.8.8.8,1.1.1.1 allow-remote-requests=yes`
+
+// ── Tab 2: PPP Server (PPPoE untuk pelanggan) ───────────────────────────────
+const pppPoolScript = `# Pool IP cadangan untuk pelanggan (RADIUS dapat menimpa per pelanggan)
+/ip pool add name=pool-pelanggan ranges=10.20.0.2-10.20.255.254`
+
+const pppProfileScript = `/ppp profile add name=profil-pelanggan \\
+    local-address=10.20.0.1 remote-address=pool-pelanggan \\
+    dns-server=8.8.8.8,1.1.1.1`
+
+const pppoeServerScript = `# Aktifkan PPPoE Server di port yang menghadap pelanggan (mis. ether2)
+/interface pppoe-server server add service-name=internet interface=ether2 \\
+    default-profile=profil-pelanggan one-session-per-host=yes disabled=no`
+
+// ── Multi-vendor: jenis router & panduan yang disesuaikan ───────────────────
+const guideType = computed(() => routerData.value.router_type || 'mikrotik')
+const isMikrotik = computed(() => guideType.value === 'mikrotik')
+// Hanya MikroTik & VyOS yang punya WireGuard native; vendor lain = IP Publik saja.
+const supportsWireguard = computed(() => guideType.value === 'mikrotik' || guideType.value === 'vyos')
+const vendorLabel = computed(() => ({
+  mikrotik: 'MikroTik RouterOS', cisco: 'Cisco IOS / IOS-XE', huawei: 'Huawei VRP',
+  juniper: 'Juniper JunOS', vyos: 'VyOS / EdgeRouter', ruijie: 'Ruijie RG-OS',
+} as Record<string, string>)[guideType.value] || 'Router')
+
+// Paksa mode IP Publik untuk vendor tanpa WireGuard.
+watch(supportsWireguard, (ok) => { if (!ok) connectionMode.value = 'direct' }, { immediate: true })
+
+// Panduan vendor (non-MikroTik): langkah WireGuard hanya untuk VyOS pada mode WireGuard.
+const wgVisible = computed(() => guideType.value === 'vyos' && connectionMode.value === 'wireguard')
+const vRadiusStep = computed(() => (wgVisible.value ? 2 : 1))
+const vPppoeStep = computed(() => (wgVisible.value ? 3 : 2))
+const vSnmpStep = computed(() => (wgVisible.value ? 4 : 3))
+
+// Nilai RADIUS sesuai mode (IP publik server, atau VPN IP saat WireGuard).
+const radiusAddr = computed(() => effectiveRadiusAddress.value || '<IP_SERVER>')
+const authPort = computed(() => cfg.value.radius_auth_port || '1812')
+const acctPort = computed(() => cfg.value.radius_acct_port || '1813')
+
+// RADIUS client config per vendor (mode IP Publik).
+const vendorRadiusScript = computed(() => {
+  const ip = radiusAddr.value, sec = radiusSecret.value, coa = coaPort.value
+  switch (guideType.value) {
+    case 'cisco':
+      return `! ===== AAA + RADIUS (D Radius) =====
+aaa new-model
+radius server DRADIUS
+ address ipv4 ${ip} auth-port ${authPort.value} acct-port ${acctPort.value}
+ key ${sec}
+aaa group server radius DRADIUS-GRP
+ server name DRADIUS
+aaa authentication ppp default group DRADIUS-GRP local
+aaa authorization network default group DRADIUS-GRP
+aaa accounting network default start-stop group DRADIUS-GRP
+! CoA (disconnect / change of authorization)
+aaa server radius dynamic-author
+ client ${ip} server-key ${sec}
+ port ${coa}`
+    case 'ruijie':
+      return `! ===== AAA + RADIUS (D Radius) =====
+aaa new-model
+radius-server host ${ip} auth-port ${authPort.value} acct-port ${acctPort.value} key ${sec}
+aaa authentication ppp default group radius local
+aaa authorization network default group radius
+aaa accounting network default start-stop group radius
+! CoA
+aaa server radius dynamic-author
+ client ${ip} server-key ${sec}
+ port ${coa}`
+    case 'huawei':
+      return `# ===== RADIUS template (D Radius) =====
+radius-server template dradius
+ radius-server shared-key cipher ${sec}
+ radius-server authentication ${ip} ${authPort.value} weight 80
+ radius-server accounting ${ip} ${acctPort.value} weight 80
+# CoA / authorization
+radius-server authorization ${ip} shared-key cipher ${sec}
+#
+aaa
+ authentication-scheme dradius
+  authentication-mode radius
+ accounting-scheme dradius
+  accounting-mode radius
+ domain dradius
+  authentication-scheme dradius
+  accounting-scheme dradius
+  radius-server dradius`
+    case 'juniper':
+      return `# ===== RADIUS (D Radius) =====
+set access radius-server ${ip} port ${authPort.value}
+set access radius-server ${ip} accounting-port ${acctPort.value}
+set access radius-server ${ip} secret "${sec}"
+set access radius-server ${ip} dynamic-request-port ${coa}
+set access profile dradius authentication-order radius
+set access profile dradius radius authentication-server ${ip}
+set access profile dradius radius accounting-server ${ip}
+set access profile dradius accounting order radius`
+    case 'vyos':
+      return `# ===== RADIUS untuk PPPoE Server (D Radius) =====
+set service pppoe-server authentication mode radius
+set service pppoe-server authentication radius server ${ip} key '${sec}'
+set service pppoe-server authentication radius server ${ip} auth-port ${authPort.value}
+set service pppoe-server authentication radius server ${ip} acct-port ${acctPort.value}
+# CoA (dynamic authorization)
+set service pppoe-server authentication radius dynamic-author server '${ip}'
+set service pppoe-server authentication radius dynamic-author key '${sec}'
+set service pppoe-server authentication radius dynamic-author port ${coa}`
+    default:
+      return ''
+  }
+})
+
+// PPPoE / BNG enablement per vendor.
+const vendorPppoeScript = computed(() => {
+  switch (guideType.value) {
+    case 'cisco':
+      return `! ===== PPPoE Server =====
+bba-group pppoe DRADIUS
+ virtual-template 1
+interface Virtual-Template1
+ mtu 1492
+ ip unnumbered Loopback0
+ peer default ip address pool RADIUS
+ ppp authentication chap pap
+! Terapkan ke interface arah pelanggan (sesuaikan)
+interface GigabitEthernet0/0/1
+ pppoe enable group DRADIUS`
+    case 'ruijie':
+      return `! ===== PPPoE Server =====
+bba-group pppoe DRADIUS
+ virtual-template 1
+interface Virtual-Template 1
+ ppp authentication chap pap
+ peer default ip address pool RADIUS
+! Interface arah pelanggan (sesuaikan)
+interface GigabitEthernet 0/1
+ pppoe enable group DRADIUS`
+    case 'huawei':
+      return `# ===== PPPoE / BAS interface =====
+interface Virtual-Template1
+ ppp authentication-mode chap pap
+ remote address pool dradius
+# Bind ke interface arah pelanggan (sesuaikan)
+interface GigabitEthernet0/0/1
+ pppoe-server bind Virtual-Template 1`
+    case 'juniper':
+      return `# ===== PPPoE Subscriber (dynamic-profiles) =====
+set interfaces pp0 unit 0 pppoe-options server
+set interfaces pp0 unit 0 ppp-options chap
+set interfaces pp0 unit 0 ppp-options pap
+set interfaces pp0 unit 0 access-profile dradius
+# Terapkan family pada interface arah pelanggan (sesuaikan)
+set interfaces ge-0/0/1 unit 0 encapsulation ppp-over-ether`
+    case 'vyos':
+      return `# ===== PPPoE Server =====
+set service pppoe-server interface eth1
+set service pppoe-server access-concentrator 'D-Radius'
+set service pppoe-server gateway-address 10.20.0.1
+set service pppoe-server name-server 8.8.8.8
+set service pppoe-server client-ip-pool dradius range 10.20.0.2-10.20.255.254`
+    default:
+      return ''
+  }
+})
+
+// WireGuard (hanya VyOS pada mode WireGuard).
+const vendorWgScript = computed(() => {
+  if (guideType.value !== 'vyos') return ''
+  return `# ===== WireGuard ke server D Radius =====
+set interfaces wireguard wg0 address '${routerVpnIP.value || '<VPN_IP>'}/24'
+set interfaces wireguard wg0 private-key <PRIVATE_KEY_ROUTER>
+set interfaces wireguard wg0 peer dradius public-key '${effectiveServerPublicKey.value}'
+set interfaces wireguard wg0 peer dradius endpoint '${effectiveServerPublicIP.value}:${vpnListenPort.value}'
+set interfaces wireguard wg0 peer dradius allowed-ips '${vpnSubnet.value}'
+set interfaces wireguard wg0 peer dradius persistent-keepalive 25
+# Tampilkan public key router (daftarkan ke dashboard):
+run show interfaces wireguard wg0 public-key`
+})
+
+// SNMP — dipakai dashboard untuk memantau status (pengganti heartbeat di non-MikroTik).
+const vendorSnmpScript = computed(() => {
+  const comm = routerData.value.snmp_community || 'public'
+  switch (guideType.value) {
+    case 'cisco':
+    case 'ruijie':
+      return `! ===== SNMP monitoring =====
+snmp-server community ${comm} RO`
+    case 'huawei':
+      return `# ===== SNMP monitoring =====
+snmp-agent
+snmp-agent sys-info version v2c
+snmp-agent community read cipher ${comm}`
+    case 'juniper':
+      return `# ===== SNMP monitoring =====
+set snmp community ${comm} authorization read-only`
+    case 'vyos':
+      return `# ===== SNMP monitoring =====
+set service snmp community ${comm} authorization ro`
+    default:
+      return ''
+  }
+})
+
+// Penjelasan cara limit kecepatan paket diterapkan per vendor (dikirim otomatis oleh RADIUS).
+const bandwidthNote = computed(() => {
+  switch (guideType.value) {
+    case 'huawei':
+      return 'Limit kecepatan diterapkan otomatis oleh RADIUS via atribut Huawei (Input/Output-Average-Rate). Tidak perlu konfigurasi QoS manual.'
+    case 'cisco':
+    case 'ruijie':
+      return 'RADIUS mengirim Filter-Id = nama paket + QoS policy AVPair. Buat satu policy-map shaping di router untuk tiap paket dengan nama sama seperti paket (spasi → underscore).'
+    case 'juniper':
+      return 'RADIUS mengirim Filter-Id = nama paket. Definisikan CoS/firewall-filter di router untuk tiap paket dengan nama sama (spasi → underscore).'
+    case 'vyos':
+      return 'VyOS/EdgeRouter (accel-ppp) membaca atribut Mikrotik-Rate-Limit. Aktifkan shaper accel-ppp agar limit kecepatan otomatis berlaku.'
+    default:
+      return ''
+  }
 })
 
 async function fetchMikrotikConfig() {
@@ -177,7 +410,7 @@ async function fetchMikrotikConfig() {
 
 async function handleSubmitVpnKey() {
   const key = vpnKeyInput.value.trim()
-  if (!key) return message.warning('Masukkan public key MikroTik')
+  if (!key) return message.warning('Masukkan public key WireGuard router')
   vpnKeySubmitting.value = true
   try {
     await routerApi.vpnKey(id, { public_key: key })
@@ -612,7 +845,7 @@ onUnmounted(() => {
             <n-text code style="word-break: break-all; font-size: 12px">{{ routerData.radius_secret || '-' }}</n-text>
           </n-descriptions-item>
           <n-descriptions-item label="CoA Port">
-            {{ routerData.coa_port || 3799 }}
+            {{ routerData.coa_port || '-' }}
           </n-descriptions-item>
           <n-descriptions-item label="Heartbeat Token">
             <div class="token-row">
@@ -773,15 +1006,15 @@ onUnmounted(() => {
   </div>
 
   <!-- Config Modal -->
-  <n-modal v-model:show="showConfigModal" preset="card" :style="{ maxWidth: '780px', width: '95vw', maxHeight: '90vh' }" :bordered="false" content-style="padding: 0; overflow-y: auto; max-height: calc(90vh - 80px)">
+  <n-modal v-model:show="showConfigModal" preset="card" :style="{ maxWidth: '960px', width: '96vw', maxHeight: '92vh' }" :bordered="false" content-style="padding: 0; overflow-y: auto; max-height: calc(92vh - 76px)">
     <template #header>
       <div class="cfg-modal-header">
         <div class="cfg-modal-icon">
-          <n-icon :size="28"><Settings /></n-icon>
+          <n-icon :size="26"><Settings /></n-icon>
         </div>
         <div>
-          <div class="cfg-modal-title">Panduan Konfigurasi MikroTik</div>
-          <div class="cfg-modal-subtitle">{{ connectionMode === 'direct' ? 'RADIUS via IP Publik — kompatibel RouterOS 6 & 7' : 'WireGuard VPN — RouterOS 7.1+' }}</div>
+          <div class="cfg-modal-title">Panduan Setup {{ vendorLabel }}</div>
+          <div class="cfg-modal-subtitle">{{ isMikrotik ? 'Dari modem ISP, PPPoE pelanggan, hingga koneksi RADIUS' : 'Hubungkan ke RADIUS via IP Publik' }}</div>
         </div>
       </div>
     </template>
@@ -791,123 +1024,325 @@ onUnmounted(() => {
 
     <n-spin :show="configLoading">
     <div class="cfg-body">
+      <n-tabs v-if="isMikrotik" v-model:value="activeGuideTab" type="segment" size="large" class="cfg-tabs" animated>
 
-      <!-- Mode Selector -->
-      <div class="cfg-mode-bar">
-        <button
-          class="cfg-mode-btn"
-          :class="{ active: connectionMode === 'direct' }"
-          @click="connectionMode = 'direct'"
-        >
-          IP Publik <span class="cfg-mode-badge">ROS 6 &amp; 7</span>
-        </button>
-        <button
-          class="cfg-mode-btn"
-          :class="{ active: connectionMode === 'wireguard' }"
-          @click="connectionMode = 'wireguard'"
-        >
-          WireGuard VPN <span class="cfg-mode-badge">ROS 7.1+</span>
-        </button>
-      </div>
+        <!-- ══════════ TAB 1: PERSIAPAN (Modem ISP → MikroTik) ══════════ -->
+        <n-tab-pane name="persiapan" tab="1 · Persiapan">
+          <p class="cfg-intro">Sambungkan internet dari ISP ke MikroTik. <strong>Ganti nama port &amp; akun ISP sesuai perangkat Anda.</strong></p>
 
-      <!-- Banner Direct Mode -->
-      <div v-if="connectionMode === 'direct'" class="cfg-banner cfg-banner--ok">
-        <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
-        <span>Mode <strong>IP Publik</strong> — tidak perlu WireGuard. Kompatibel dengan semua RouterOS 6 dan 7. Pastikan port 1812/1813 (UDP) dan {{ routerData.coa_port || 3799 }} (TCP) terbuka di firewall server.</span>
-      </div>
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">1</span>
+              <div>
+                <div class="cfg-step-title">Hubungkan Kabel</div>
+                <div class="cfg-step-desc">Kabel LAN dari modem ISP → port <code>ether1</code> (WAN). Port lain (mis. <code>ether2</code>) untuk jaringan pelanggan.</div>
+              </div>
+            </div>
+          </div>
 
-      <!-- Banner WireGuard Mode -->
-      <div v-else-if="!serverPublicKey" class="cfg-banner cfg-banner--warn">
-        <n-icon class="cfg-banner-svg" :size="18"><AlertTriangle /></n-icon>
-        <span>Public key server belum tersedia. Lengkapi konfigurasi WireGuard di server terlebih dahulu.</span>
-      </div>
-      <div v-else class="cfg-banner cfg-banner--ok">
-        <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
-        <span>Mode <strong>WireGuard VPN</strong> — nilai sudah terisi otomatis. Salin & jalankan di Terminal MikroTik secara berurutan.</span>
-      </div>
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">2</span>
+              <div>
+                <div class="cfg-step-title">Konfigurasi WAN</div>
+                <div class="cfg-step-desc">Pilih salah satu sesuai mode modem ISP Anda.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ wanDhcpScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(wanDhcpScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ wanPppoeScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(wanPppoeScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
 
-      <!-- Info Cards Grid -->
-      <div class="cfg-info-grid">
-        <div v-if="connectionMode === 'wireguard'" class="cfg-info-item">
-          <span class="cfg-info-label">VPN IP Router</span>
-          <span class="cfg-info-value">{{ routerData.vpn_ip || '-' }}</span>
-        </div>
-        <div class="cfg-info-item">
-          <span class="cfg-info-label">RADIUS Address</span>
-          <span class="cfg-info-value cfg-info-mono">{{ effectiveRadiusAddress }}</span>
-        </div>
-        <div v-if="connectionMode === 'wireguard'" class="cfg-info-item">
-          <span class="cfg-info-label">WireGuard Endpoint</span>
-          <span class="cfg-info-value">{{ effectiveServerPublicIP }}</span>
-        </div>
-        <div v-if="connectionMode === 'wireguard'" class="cfg-info-item">
-          <span class="cfg-info-label">Public Key Server</span>
-          <span class="cfg-info-value cfg-info-mono" style="font-size: 10px">{{ effectiveServerPublicKey.substring(0, 24) }}...</span>
-        </div>
-        <div class="cfg-info-item">
-          <span class="cfg-info-label">RADIUS Secret</span>
-          <span class="cfg-info-value cfg-info-mono">{{ routerData.radius_secret || '-' }}</span>
-        </div>
-        <div class="cfg-info-item">
-          <span class="cfg-info-label">CoA Port</span>
-          <span class="cfg-info-value">{{ routerData.coa_port || 3799 }}</span>
-        </div>
-        <div class="cfg-info-item">
-          <span class="cfg-info-label">Heartbeat Token</span>
-          <span class="cfg-info-value cfg-info-mono" style="font-size: 10px">{{ (routerData.heartbeat_token || '-').substring(0, 24) }}...</span>
-        </div>
-      </div>
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">3</span>
+              <div>
+                <div class="cfg-step-title">NAT &amp; DNS</div>
+                <div class="cfg-step-desc">Aktifkan NAT agar pelanggan bisa internet, lalu set DNS.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ wanNatScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(wanNatScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ wanDnsScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(wanDnsScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
 
-      <!-- Steps -->
-      <div class="cfg-steps">
-        <!-- Step 1: WireGuard Interface (hanya mode WireGuard) -->
-        <div v-if="connectionMode === 'wireguard'" class="cfg-step">
+          <div class="cfg-tab-nav">
+            <span></span>
+            <n-button type="primary" size="small" @click="activeGuideTab = 'ppp'">Lanjut: PPP Server →</n-button>
+          </div>
+        </n-tab-pane>
+
+        <!-- ══════════ TAB 2: PPP SERVER ══════════ -->
+        <n-tab-pane name="ppp" tab="2 · PPP Server">
+          <p class="cfg-intro">Buat PPPoE Server agar pelanggan bisa dial. <strong>IP &amp; paket akhirnya diatur otomatis oleh RADIUS</strong> — pool di bawah hanya cadangan.</p>
+
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">1</span>
+              <div>
+                <div class="cfg-step-title">Buat IP Pool</div>
+                <div class="cfg-step-desc">Range IP cadangan untuk pelanggan. Sesuaikan dengan jaringan Anda.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ pppPoolScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(pppPoolScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">2</span>
+              <div>
+                <div class="cfg-step-title">Buat PPP Profile</div>
+                <div class="cfg-step-desc">Profil default untuk sesi pelanggan (gateway &amp; DNS).</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ pppProfileScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(pppProfileScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">3</span>
+              <div>
+                <div class="cfg-step-title">Aktifkan PPPoE Server</div>
+                <div class="cfg-step-desc">Jalankan PPPoE server di port yang menghadap pelanggan.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ pppoeServerScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(pppoeServerScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
+          <div class="cfg-tab-nav">
+            <n-button size="small" tertiary @click="activeGuideTab = 'persiapan'">← Persiapan</n-button>
+            <n-button type="primary" size="small" @click="activeGuideTab = 'radius'">Lanjut: Koneksi RADIUS →</n-button>
+          </div>
+        </n-tab-pane>
+
+        <!-- ══════════ TAB 3: KONEKSI RADIUS ══════════ -->
+        <n-tab-pane name="radius" tab="3 · Koneksi RADIUS">
+          <p class="cfg-intro">Hubungkan MikroTik ke server RADIUS agar autentikasi &amp; paket pelanggan terpusat.</p>
+
+          <!-- Mode Selector -->
+          <div class="cfg-mode-bar">
+            <button class="cfg-mode-btn" :class="{ active: connectionMode === 'direct' }" @click="connectionMode = 'direct'">
+              IP Publik <span class="cfg-mode-badge">ROS 6 &amp; 7</span>
+            </button>
+            <button class="cfg-mode-btn" :class="{ active: connectionMode === 'wireguard' }" @click="connectionMode = 'wireguard'">
+              WireGuard VPN <span class="cfg-mode-badge">ROS 7.1+</span>
+            </button>
+          </div>
+
+          <!-- Banner per mode -->
+          <div v-if="connectionMode === 'direct'" class="cfg-banner cfg-banner--ok">
+            <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
+            <span>Buka port <strong>{{ mikrotikConfig?.radius_auth_port }}/{{ mikrotikConfig?.radius_acct_port }}</strong> (UDP) &amp; <strong>{{ coaPort }}</strong> (TCP) di firewall server.</span>
+          </div>
+          <div v-else-if="!serverPublicKey" class="cfg-banner cfg-banner--warn">
+            <n-icon class="cfg-banner-svg" :size="18"><AlertTriangle /></n-icon>
+            <span>Public key server belum tersedia. Lengkapi WireGuard di server terlebih dahulu.</span>
+          </div>
+          <div v-else class="cfg-banner cfg-banner--ok">
+            <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
+            <span>Semua nilai sudah terisi otomatis dari server. Salin &amp; jalankan berurutan.</span>
+          </div>
+
+          <!-- Referensi nilai (ringkas) -->
+          <div class="cfg-info-grid">
+            <div v-if="connectionMode === 'wireguard'" class="cfg-info-item">
+              <span class="cfg-info-label">VPN IP Router</span>
+              <span class="cfg-info-value cfg-info-mono">{{ routerVpnIP || '-' }}</span>
+            </div>
+            <div class="cfg-info-item">
+              <span class="cfg-info-label">RADIUS Address</span>
+              <span class="cfg-info-value cfg-info-mono">{{ effectiveRadiusAddress || '-' }}</span>
+            </div>
+            <div class="cfg-info-item">
+              <span class="cfg-info-label">RADIUS Secret</span>
+              <span class="cfg-info-value cfg-info-mono">{{ radiusSecret || '-' }}</span>
+            </div>
+            <div class="cfg-info-item">
+              <span class="cfg-info-label">CoA Port</span>
+              <span class="cfg-info-value cfg-info-mono">{{ coaPort || '-' }}</span>
+            </div>
+          </div>
+
+          <!-- WireGuard Step 1: Interface -->
+          <div v-if="connectionMode === 'wireguard'" class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">1</span>
+              <div>
+                <div class="cfg-step-title">Buat Interface WireGuard</div>
+                <div class="cfg-step-desc">Interface <code>wg0</code> port {{ wgRouterPort }} + IP VPN di jaringan {{ vpnSubnet }}.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ wgInterfaceBlock1 }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(wgInterfaceBlock1)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ wgInterfaceBlock2 }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(wgInterfaceBlock2)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+            <div class="cfg-step-note">
+              <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
+              <div>Cek public key MikroTik dengan <code>/interface wireguard print</code>, lalu daftarkan di bawah:</div>
+            </div>
+            <div class="cfg-key-form">
+              <n-input v-model:value="vpnKeyInput" :placeholder="routerData.vpn_public_key || 'Paste public key MikroTik...'" size="small" style="flex: 1" :disabled="vpnKeySubmitting" />
+              <n-button size="small" type="primary" :loading="vpnKeySubmitting" :disabled="!vpnKeyInput.trim()" @click="handleSubmitVpnKey">Daftarkan</n-button>
+            </div>
+            <div v-if="routerData.vpn_public_key" class="cfg-key-registered">
+              <n-icon :size="14" :color="'#52c41a'"><Check /></n-icon>
+              <span style="color: #52c41a; font-weight: 600; font-size: 12px">Key terdaftar</span>
+              <span class="cfg-key-value">{{ routerData.vpn_public_key }}</span>
+            </div>
+          </div>
+
+          <!-- WireGuard Step 2: Peer -->
+          <div v-if="connectionMode === 'wireguard'" class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">2</span>
+              <div>
+                <div class="cfg-step-title">Tambah Peer Server</div>
+                <div class="cfg-step-desc">Endpoint <code>{{ effectiveServerPublicIP }}:{{ vpnListenPort }}</code>, allowed <code>{{ vpnSubnet }}</code>.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ wgPeerScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(wgPeerScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
+          <!-- RADIUS Client -->
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 1 : 3 }}</span>
+              <div>
+                <div class="cfg-step-title">Daftarkan Client RADIUS</div>
+                <div class="cfg-step-desc">Arahkan ke <code>{{ effectiveRadiusAddress }}</code> &amp; aktifkan Incoming (CoA).</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ radiusBlock1 }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(radiusBlock1)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ radiusBlock2 }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(radiusBlock2)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
+          <!-- Aktifkan use-radius -->
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 2 : 4 }}</span>
+              <div>
+                <div class="cfg-step-title">Aktifkan Use RADIUS di PPP</div>
+                <div class="cfg-step-desc">Sesi PPPoE pelanggan kini diautentikasi oleh server RADIUS.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ pppoeBlock2 }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(pppoeBlock2)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
+          <!-- Heartbeat -->
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 3 : 5 }}</span>
+              <div>
+                <div class="cfg-step-title">Monitoring Heartbeat <span class="cfg-opt">opsional</span></div>
+                <div class="cfg-step-desc">Kirim status CPU, RAM, uptime ke dashboard tiap <code>{{ heartbeatInterval }}</code>.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ heartbeatScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(heartbeatScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
+          <div class="cfg-tab-nav">
+            <n-button size="small" tertiary @click="activeGuideTab = 'ppp'">← PPP Server</n-button>
+            <n-button size="small" @click="showConfigModal = false">Selesai</n-button>
+          </div>
+        </n-tab-pane>
+      </n-tabs>
+
+      <!-- ══════════ Panduan VENDOR LAIN (Cisco/Huawei/Juniper/VyOS/Ruijie) ══════════ -->
+      <div v-else class="cfg-vendor">
+        <p class="cfg-intro">
+          Panduan untuk <strong>{{ vendorLabel }}</strong>. Hubungkan router ke server RADIUS.
+          Sesuaikan nama interface dengan perangkat Anda.
+        </p>
+
+        <!-- Mode selector (hanya VyOS yang mendukung WireGuard) -->
+        <div v-if="guideType === 'vyos'" class="cfg-mode-bar">
+          <button class="cfg-mode-btn" :class="{ active: connectionMode === 'direct' }" @click="connectionMode = 'direct'">
+            IP Publik
+          </button>
+          <button class="cfg-mode-btn" :class="{ active: connectionMode === 'wireguard' }" @click="connectionMode = 'wireguard'">
+            WireGuard VPN <span class="cfg-mode-badge">VPN Tunnel</span>
+          </button>
+        </div>
+
+        <!-- Referensi nilai -->
+        <div class="cfg-info-grid">
+          <div class="cfg-info-item">
+            <span class="cfg-info-label">RADIUS Address</span>
+            <span class="cfg-info-value cfg-info-mono">{{ radiusAddr }}</span>
+          </div>
+          <div class="cfg-info-item">
+            <span class="cfg-info-label">RADIUS Secret</span>
+            <span class="cfg-info-value cfg-info-mono">{{ radiusSecret || '-' }}</span>
+          </div>
+          <div class="cfg-info-item">
+            <span class="cfg-info-label">Auth / Acct</span>
+            <span class="cfg-info-value cfg-info-mono">{{ authPort }} / {{ acctPort }}</span>
+          </div>
+          <div class="cfg-info-item">
+            <span class="cfg-info-label">CoA Port</span>
+            <span class="cfg-info-value cfg-info-mono">{{ coaPort || '-' }}</span>
+          </div>
+        </div>
+
+        <div class="cfg-banner cfg-banner--ok">
+          <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
+          <span>Buka port <strong>{{ authPort }}/{{ acctPort }}</strong> (UDP) &amp; <strong>{{ coaPort }}</strong> (UDP/TCP) ke IP server di firewall. Monitoring status memakai SNMP.</span>
+        </div>
+
+        <!-- WireGuard (VyOS, mode WireGuard) -->
+        <div v-if="wgVisible" class="cfg-step">
           <div class="cfg-step-header">
             <span class="cfg-step-num">1</span>
             <div>
-              <div class="cfg-step-title">Buat Interface WireGuard</div>
-              <div class="cfg-step-desc">Buat interface <code>wg0</code> pada port 13231, lalu pasang IP VPN router di jaringan privat 10.10.0.0/24.</div>
+              <div class="cfg-step-title">WireGuard ke Server</div>
+              <div class="cfg-step-desc">Bangun terowongan ke server, lalu daftarkan public key router di bawah.</div>
             </div>
           </div>
           <div class="cfg-code">
-            <pre>{{ wgInterfaceBlock1 }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(wgInterfaceBlock1)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
-          </div>
-          <div class="cfg-code">
-            <pre>{{ wgInterfaceBlock2 }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(wgInterfaceBlock2)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
-          </div>
-          <div class="cfg-step-note">
-            <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
-            <div>
-              Setelah interface aktif, salin public key MikroTik lalu daftarkan ke dashboard agar peer server diizinkan:<br>
-              <code>/interface wireguard print</code><br>
-              Tempel public key di bawah ini:
-            </div>
+            <pre>{{ vendorWgScript }}</pre>
+            <button class="cfg-copy-btn" @click="copyToClipboard(vendorWgScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
           </div>
           <div class="cfg-key-form">
-            <n-input
-              v-model:value="vpnKeyInput"
-              :placeholder="routerData.vpn_public_key || 'Paste MikroTik WireGuard public key...'"
-              size="small"
-              style="flex: 1"
-              :disabled="vpnKeySubmitting"
-            />
-            <n-button
-              size="small"
-              type="primary"
-              :loading="vpnKeySubmitting"
-              :disabled="!vpnKeyInput.trim()"
-              @click="handleSubmitVpnKey"
-            >
-              Daftarkan
-            </n-button>
+            <n-input v-model:value="vpnKeyInput" :placeholder="routerData.vpn_public_key || 'Paste public key WireGuard router...'" size="small" style="flex: 1" :disabled="vpnKeySubmitting" />
+            <n-button size="small" type="primary" :loading="vpnKeySubmitting" :disabled="!vpnKeyInput.trim()" @click="handleSubmitVpnKey">Daftarkan</n-button>
           </div>
           <div v-if="routerData.vpn_public_key" class="cfg-key-registered">
             <n-icon :size="14" :color="'#52c41a'"><Check /></n-icon>
@@ -916,95 +1351,59 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <!-- Step 2: WireGuard Peer (hanya mode WireGuard) -->
-        <div v-if="connectionMode === 'wireguard'" class="cfg-step">
-          <div class="cfg-step-header">
-            <span class="cfg-step-num">2</span>
-            <div>
-              <div class="cfg-step-title">Tambah Peer Server WireGuard</div>
-              <div class="cfg-step-desc">Gunakan public key server, endpoint <code>{{ effectiveServerPublicIP }}:{{ mikrotikConfig?.vpn_listen_port || '51820' }}</code>, dan allowed address <code>{{ mikrotikConfig?.vpn_subnet || '10.10.0.0/24' }}</code>.</div>
-            </div>
-          </div>
-          <div class="cfg-code">
-            <pre>{{ wgPeerScript }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(wgPeerScript)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
-          </div>
-        </div>
-
-        <!-- Step RADIUS -->
+        <!-- RADIUS -->
         <div class="cfg-step">
           <div class="cfg-step-header">
-            <span class="cfg-step-num">{{ connectionMode === 'direct' ? 1 : 3 }}</span>
+            <span class="cfg-step-num">{{ vRadiusStep }}</span>
             <div>
-              <div class="cfg-step-title">Konfigurasi Client RADIUS</div>
-              <div class="cfg-step-desc">Arahkan service <code>hotspot</code>, <code>ppp</code>, dan <code>login</code> ke <code>{{ effectiveRadiusAddress }}</code>, lalu aktifkan Incoming pada port CoA.</div>
+              <div class="cfg-step-title">Konfigurasi RADIUS Client</div>
+              <div class="cfg-step-desc">Daftarkan server RADIUS untuk autentikasi, accounting, dan CoA.</div>
             </div>
           </div>
           <div class="cfg-code">
-            <pre>{{ radiusBlock1 }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(radiusBlock1)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
-          </div>
-          <div class="cfg-code">
-            <pre>{{ radiusBlock2 }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(radiusBlock2)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
+            <pre>{{ vendorRadiusScript }}</pre>
+            <button class="cfg-copy-btn" @click="copyToClipboard(vendorRadiusScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
           </div>
         </div>
 
-        <!-- Step Hotspot & PPPoE -->
+        <!-- PPPoE -->
         <div class="cfg-step">
           <div class="cfg-step-header">
-            <span class="cfg-step-num">{{ connectionMode === 'direct' ? 2 : 4 }}</span>
+            <span class="cfg-step-num">{{ vPppoeStep }}</span>
             <div>
-              <div class="cfg-step-title">Aktivasi Hotspot & PPPoE</div>
-              <div class="cfg-step-desc">Aktifkan <code>Use RADIUS</code> pada Hotspot dan PPP. Untuk Hotspot, pastikan <code>PAP</code> tetap aktif di tab Login.</div>
+              <div class="cfg-step-title">{{ guideType === 'vyos' ? 'PPPoE Server' : 'PPPoE / BNG' }}</div>
+              <div class="cfg-step-desc">Aktifkan sesi PPPoE pelanggan dengan autentikasi RADIUS. Sesuaikan nama interface.</div>
             </div>
           </div>
           <div class="cfg-code">
-            <pre>{{ pppoeBlock1 }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(pppoeBlock1)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
+            <pre>{{ vendorPppoeScript }}</pre>
+            <button class="cfg-copy-btn" @click="copyToClipboard(vendorPppoeScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
           </div>
-          <div class="cfg-code">
-            <pre>{{ pppoeBlock2 }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(pppoeBlock2)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
+          <div v-if="bandwidthNote" class="cfg-step-note">
+            <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
+            <div><strong>Limit kecepatan:</strong> {{ bandwidthNote }}</div>
           </div>
         </div>
 
-        <!-- Step Heartbeat -->
+        <!-- SNMP -->
         <div class="cfg-step">
           <div class="cfg-step-header">
-            <span class="cfg-step-num">{{ connectionMode === 'direct' ? 3 : 5 }}</span>
+            <span class="cfg-step-num">{{ vSnmpStep }}</span>
             <div>
-              <div class="cfg-step-title">Monitoring Heartbeat (Opsional)</div>
-              <div class="cfg-step-desc">Pasang scheduler setiap 5 menit agar CPU, RAM, dan uptime terkirim ke dashboard. Token heartbeat sudah terisi otomatis.</div>
+              <div class="cfg-step-title">SNMP Monitoring</div>
+              <div class="cfg-step-desc">Dashboard memantau status router via SNMP. Community: <code>{{ routerData.snmp_community || 'public' }}</code>.</div>
             </div>
           </div>
           <div class="cfg-code">
-            <pre>{{ heartbeatScript }}</pre>
-            <button class="cfg-copy-btn" @click="copyToClipboard(heartbeatScript)">
-              <n-icon :size="14"><Copy /></n-icon>
-              Salin
-            </button>
+            <pre>{{ vendorSnmpScript }}</pre>
+            <button class="cfg-copy-btn" @click="copyToClipboard(vendorSnmpScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
           </div>
         </div>
-      </div>
 
-      <div class="cfg-footer">
-        <n-button size="small" @click="showConfigModal = false">Tutup</n-button>
+        <div class="cfg-tab-nav">
+          <span></span>
+          <n-button size="small" @click="showConfigModal = false">Selesai</n-button>
+        </div>
       </div>
     </div>
     </n-spin>
@@ -1331,8 +1730,41 @@ onUnmounted(() => {
 .cfg-modal-title { font-size: 17px; font-weight: 700; line-height: 1.3; }
 .cfg-modal-subtitle { font-size: 13px; opacity: 0.55; margin-top: 2px; }
 
-.cfg-body { padding: 20px 24px 16px; }
-@media (max-width: 640px) { .cfg-body { padding: 16px; } }
+.cfg-body { padding: 16px 24px 18px; }
+@media (max-width: 640px) { .cfg-body { padding: 12px 14px 14px; } }
+
+/* Tabs */
+.cfg-tabs :deep(.n-tabs-tab) { font-weight: 600; }
+.cfg-intro {
+  font-size: 13px;
+  line-height: 1.55;
+  opacity: 0.7;
+  margin: 14px 0 16px;
+}
+.cfg-intro strong { opacity: 0.95; }
+
+.cfg-tab-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.cfg-opt {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #888;
+  background: rgba(128, 128, 128, 0.12);
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
 
 .cfg-mode-bar {
   display: flex;
@@ -1394,9 +1826,9 @@ onUnmounted(() => {
 
 .cfg-info-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
 }
 @media (max-width: 640px) { .cfg-info-grid { grid-template-columns: repeat(2, 1fr); } }
 
@@ -1423,9 +1855,11 @@ onUnmounted(() => {
 .cfg-step {
   border: 1px solid rgba(128, 128, 128, 0.1);
   border-radius: 12px;
-  padding: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
   transition: border-color 0.2s;
 }
+.cfg-step .cfg-code { margin-top: 8px; }
 :root.dark .cfg-step { border-color: rgba(255, 255, 255, 0.08); }
 .cfg-step:hover { border-color: rgba(64, 128, 255, 0.3); }
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  NCard, NTag, NButton, NSpace,
+  NCard, NTag, NButton, NSpace, NPopconfirm,
   NDataTable, NStatistic, NGrid, NGridItem, useMessage
 } from 'naive-ui'
 import { resellerApi } from '../../api'
@@ -14,7 +14,42 @@ const loading = ref(true)
 const reseller = ref<any>({})
 const customers = ref<any[]>([])
 const commissions = ref<any[]>([])
+const summary = ref<{ total_earned: number; total_paid: number; total_pending: number; customer_count: number } | null>(null)
+const paying = ref(false)
 const id = route.params.id as string
+
+const rp = (n: number) => 'Rp ' + (n || 0).toLocaleString('id-ID')
+
+async function reload() {
+  const [comRes, sumRes] = await Promise.all([
+    resellerApi.commissions(id).catch(() => ({ data: { data: [] } })),
+    resellerApi.commissionSummary(id).catch(() => ({ data: { data: null } })),
+  ])
+  commissions.value = comRes.data?.data || []
+  summary.value = sumRes.data?.data || null
+}
+
+async function payOne(commissionId: string) {
+  try {
+    await resellerApi.payCommission(commissionId)
+    message.success('Komisi dibayar')
+    await reload()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || 'Gagal membayar komisi')
+  }
+}
+
+async function payAll() {
+  paying.value = true
+  try {
+    const { data } = await resellerApi.payAll(id)
+    message.success(`${data?.paid ?? data?.data?.paid ?? ''} komisi dibayar`.trim() || 'Semua komisi dibayar')
+    await reload()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || 'Gagal membayar komisi')
+  }
+  paying.value = false
+}
 
 const windowWidth = ref(window.innerWidth)
 const onResize = () => { windowWidth.value = window.innerWidth }
@@ -44,21 +79,35 @@ const custCols = [
 
 const commCols = [
   { title: 'Pelanggan', key: 'customer_name', render: (r: any) => r.customer_name || '-' },
-  { title: 'Jumlah', key: 'amount', render: (r: any) => (r.amount || 0).toLocaleString('id-ID') },
-  { title: 'Status', key: 'status' },
+  { title: 'Jumlah', key: 'amount', render: (r: any) => rp(r.amount || 0) },
+  {
+    title: 'Status', key: 'status',
+    render: (r: any) => {
+      const s = commStatusMap[r.status] || { type: 'default', label: r.status }
+      return h(NTag, { type: s.type, size: 'small' }, () => s.label)
+    },
+  },
   { title: 'Tanggal', key: 'created_at', render: (r: any) => r.created_at?.split('T')[0] || '-' },
+  {
+    title: 'Aksi', key: 'aksi',
+    render: (r: any) => r.status === 'pending'
+      ? h(NPopconfirm, { onPositiveClick: () => payOne(r.id) }, {
+          trigger: () => h(NButton, { size: 'tiny', type: 'success' }, () => 'Bayar'),
+          default: () => `Bayar komisi ${rp(r.amount || 0)}?`,
+        })
+      : h('span', { style: 'opacity:0.4' }, '—'),
+  },
 ]
 
 onMounted(async () => {
   try {
-    const [rRes, cRes, comRes] = await Promise.all([
+    const [rRes, cRes] = await Promise.all([
       resellerApi.get(id),
       resellerApi.customers(id).catch(() => ({ data: [] })),
-      resellerApi.commissions(id).catch(() => ({ data: [] })),
     ])
     reseller.value = rRes.data?.data || rRes.data
     customers.value = cRes.data?.data || []
-    commissions.value = comRes.data?.data || []
+    await reload()
   } catch { message.error('Gagal memuat data reseller') }
   loading.value = false
 })
@@ -106,6 +155,22 @@ onMounted(async () => {
       </div>
     </n-card>
 
+    <n-card v-if="summary" title="Ringkasan Komisi">
+      <template #header-extra>
+        <n-popconfirm v-if="(summary.total_pending || 0) > 0" @positive-click="payAll">
+          <template #trigger>
+            <n-button size="small" type="primary" :loading="paying">Bayar Semua ({{ rp(summary.total_pending) }})</n-button>
+          </template>
+          Bayar semua komisi pending sebesar {{ rp(summary.total_pending) }}?
+        </n-popconfirm>
+      </template>
+      <n-grid :cols="3" :x-gap="16" :y-gap="12" responsive="screen" item-responsive>
+        <n-grid-item span="3 m:1"><n-statistic label="Total Komisi" :value="rp(summary.total_earned)" /></n-grid-item>
+        <n-grid-item span="3 m:1"><n-statistic label="Sudah Dibayar" :value="rp(summary.total_paid)" /></n-grid-item>
+        <n-grid-item span="3 m:1"><n-statistic label="Belum Dibayar" :value="rp(summary.total_pending)" /></n-grid-item>
+      </n-grid>
+    </n-card>
+
     <n-card title="Riwayat Komisi">
       <!-- Desktop: table -->
       <n-data-table v-if="isDesktop" :columns="commCols" :data="commissions" :bordered="false" size="small" />
@@ -119,8 +184,14 @@ onMounted(async () => {
               <span style="font-weight:600;font-size:13px">{{ r.customer_name || '-' }}</span>
               <n-tag :type="(commStatusMap[r.status] || {}).type || 'default'" size="small">{{ (commStatusMap[r.status] || {}).label || r.status }}</n-tag>
             </div>
-            <div style="font-weight:600;margin-bottom:2px">Rp {{ (r.amount || 0).toLocaleString('id-ID') }}</div>
-            <div style="font-size:11px;opacity:0.5">{{ r.created_at?.split('T')[0] || '-' }}</div>
+            <div style="font-weight:600;margin-bottom:2px">{{ rp(r.amount || 0) }}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:11px;opacity:0.5">{{ r.created_at?.split('T')[0] || '-' }}</span>
+              <n-popconfirm v-if="r.status === 'pending'" @positive-click="payOne(r.id)">
+                <template #trigger><n-button size="tiny" type="success">Bayar</n-button></template>
+                Bayar komisi {{ rp(r.amount || 0) }}?
+              </n-popconfirm>
+            </div>
           </n-card>
         </div>
       </div>

@@ -73,8 +73,8 @@ async function handleChangePassword() {
     message.error('Konfirmasi password tidak cocok')
     return
   }
-  if (f.new_password.length < 6) {
-    message.warning('Password minimal 6 karakter')
+  if (f.new_password.length < 8) {
+    message.warning('Password minimal 8 karakter')
     return
   }
   changingPassword.value = true
@@ -190,7 +190,7 @@ onMounted(fetchProfile)
                     v-model:value="passwordForm.new_password"
                     type="password"
                     show-password-on="click"
-                    placeholder="Minimal 6 karakter"
+                    placeholder="Minimal 8 karakter"
                   />
                 </n-form-item>
 
@@ -211,7 +211,7 @@ onMounted(fetchProfile)
 
                 <div class="password-hint">
                   <n-icon :component="Lock" :size="13" style="opacity: 0.5" />
-                  <span>Password minimal 6 karakter. Gunakan kombinasi huruf, angka, dan simbol untuk keamanan lebih baik.</span>
+                  <span>Password minimal 8 karakter. Gunakan kombinasi huruf, angka, dan simbol untuk keamanan lebih baik.</span>
                 </div>
 
                 <n-space justify="end">

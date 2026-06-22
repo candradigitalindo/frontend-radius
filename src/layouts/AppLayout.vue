@@ -85,6 +85,7 @@ function onMenuSelect(key: string) {
   // Some keys need a custom path (contain dashes that map to nested routes)
   const customPaths: Record<string, string> = {
     'rewards-dashboard': '/rewards/dashboard',
+    'network-map': '/map',
   }
   if (customPaths[key]) {
     router.push(customPaths[key])

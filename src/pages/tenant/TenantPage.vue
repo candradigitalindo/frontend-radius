@@ -1118,7 +1118,8 @@ async function setDefaultBP(id: string) {
               <span class="hint-var">{paket}</span>
               <span class="hint-var">{jumlah}</span>
               <span class="hint-var">{jatuh_tempo}</span>
-              <span class="hint-var" title="Link bayar PG (jika tersedia)">{payment_url}</span>
+              <span class="hint-var" title="Link checkout gateway (jika sudah dibuat)">{payment_url}</span>
+              <span class="hint-var" title="Link halaman bayar mandiri — cocok untuk blast">{link_bayar}</span>
             </div>
           </div>
         </n-grid-item>

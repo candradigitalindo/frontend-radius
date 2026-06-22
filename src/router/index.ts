@@ -43,6 +43,12 @@ const routes: RouteRecordRaw[] = [
     meta: { guest: true },
   },
   {
+    path: '/pay/:tenantId/:customerCode',
+    name: 'public-pay',
+    component: () => import('../pages/public/PublicPayPage.vue'),
+    meta: { guest: true },
+  },
+  {
     path: '/forbidden',
     name: 'forbidden',
     component: () => import('../pages/ForbiddenPage.vue'),
@@ -182,6 +188,11 @@ router.beforeEach(async (to, _from, next) => {
 
   // Allow forbidden page without checks
   if (to.name === 'forbidden') {
+    return next()
+  }
+
+  // Public self-service payment page — always accessible (customers have no login)
+  if (to.name === 'public-pay') {
     return next()
   }
 

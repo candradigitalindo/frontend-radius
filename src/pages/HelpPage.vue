@@ -1,520 +1,548 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { NIcon } from 'naive-ui'
 import {
-  NCard, NTabs, NTabPane, NTag, NButton, NIcon, NSpace, NText,
-  useThemeVars
-} from 'naive-ui'
-import {
-  BookOutline as GuideIcon,
-  SettingsOutline as SetupIcon,
-  AppsOutline as FeatIcon,
-  GridOutline as DashboardIcon,
-  PeopleOutline as CustomerIcon,
-  CubeOutline as PackageIcon,
-  ReceiptOutline as InvoiceIcon,
+  GlobeOutline as NetworkIcon,
   HardwareChipOutline as RouterIcon,
-  SpeedometerOutline as BandwidthIcon,
-  ServerOutline as IpamIcon,
-  ChatbubbleEllipsesOutline as TicketIcon,
-  TicketOutline as VoucherIcon,
-  WalletOutline as ExpenseIcon,
-  BarChartOutline as ReportIcon,
-  LogoWhatsapp as WaIcon,
-  BusinessOutline as TenantIcon,
-  PersonOutline as UserIcon,
-  ShieldCheckmarkOutline as RoleIcon,
-  LockClosedOutline as AuthIcon,
-  ColorPaletteOutline as ThemeIcon,
-  AlertCircleOutline as WarnIcon,
-  ArrowForwardOutline as ArrowIcon,
-  InformationCircleOutline as InfoIcon,
-  MoonOutline as MoonIcon,
-  LayersOutline as LayoutIcon,
   WifiOutline as OltIcon,
   LocationOutline as OdpIcon,
-  GlobeOutline as NetworkIcon,
+  MapOutline as MapIcon,
+  ServerOutline as IpamIcon,
+  SpeedometerOutline as BandwidthIcon,
+  BuildOutline as AdminIcon,
+  LogoWhatsapp as WaIcon,
+  BusinessOutline as TenantIcon,
+  CashOutline as BillingIcon,
+  CardOutline as PaymentIcon,
+  PeopleOutline as CustomerIcon,
+  CubeOutline as PackageIcon,
+  BulbOutline as TipIcon,
+  ChevronForwardOutline as ChevIcon,
+  WalletOutline as FinanceIcon,
+  ReceiptOutline as InvoiceIcon,
+  TrendingDownOutline as ExpenseIcon,
+  BarChartOutline as ReportIcon,
+  AppsOutline as ServiceIcon,
+  ChatbubbleEllipsesOutline as TicketIcon,
+  TicketOutline as VoucherIcon,
+  NotificationsOutline as NotifIcon,
+  MegaphoneOutline as MarketingIcon,
+  GiftOutline as RewardIcon,
+  ShareSocialOutline as ReferralIcon,
+  StorefrontOutline as ResellerIcon,
 } from '@vicons/ionicons5'
-import { History } from '@vicons/tabler'
 
-const themeVars = useThemeVars()
-const activeTab = ref('setup')
+interface Topic {
+  icon: any
+  title: string
+  desc: string
+  steps: string[]
+  tip?: string
+}
+interface Section {
+  key: string
+  label: string
+  icon: any
+  color: string
+  intro: string
+  topics: Topic[]
+}
 
-// ============================================================
-// SCREENSHOT MOCKUP DATA
-// ============================================================
-const screenshots = [
+const sections: Section[] = [
   {
-    id: 'dashboard',
-    title: 'Dashboard',
-    icon: DashboardIcon,
-    color: '#6366f1',
-    gradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-    desc: 'Halaman utama dengan statistik real-time, grafik revenue, dan monitoring performa bisnis.',
-    stats: [
-      { label: 'Pelanggan', value: '1,247', color: '#6366f1' },
-      { label: 'Aktif', value: '1,182', color: '#22c55e' },
-      { label: 'Revenue', value: 'Rp 287jt', color: '#10b981' },
-      { label: 'Tiket', value: '12', color: '#f59e0b' },
+    key: 'jaringan',
+    label: 'Jaringan',
+    icon: NetworkIcon,
+    color: '#f59e0b',
+    intro: 'Siapkan infrastruktur jaringan: hubungkan router ke RADIUS, kelola perangkat FTTH, dan pantau trafik.',
+    topics: [
+      {
+        icon: RouterIcon,
+        title: 'Router',
+        desc: 'Hubungkan router ke server RADIUS sebagai gerbang autentikasi pelanggan. Mendukung MikroTik, Cisco, Huawei, Juniper, VyOS/EdgeRouter, dan Ruijie.',
+        steps: [
+          'Buka Jaringan → Router → Daftarkan Router.',
+          'Isi nama dan pilih jenis router (kartu pemilih bisa dicari).',
+          'Buka detail router → tombol Konfigurasi → ikuti panduan yang menyesuaikan merek (IP Publik / WireGuard).',
+          'Salin skrip ke router. Pastikan status menjadi Online.',
+        ],
+        tip: 'RADIUS Secret, CoA Port, dan Heartbeat Token di-generate otomatis — tidak perlu diisi manual.',
+      },
+      {
+        icon: OltIcon,
+        title: 'OLT',
+        desc: 'Daftarkan perangkat OLT FTTH Anda sebagai titik pusat jaringan fiber.',
+        steps: [
+          'Buka Jaringan → OLT → Tambah OLT.',
+          'Isi nama, IP/SNMP, dan koordinat (latitude/longitude).',
+          'Koordinat membuat OLT muncul di Peta Jaringan.',
+        ],
+      },
+      {
+        icon: OdpIcon,
+        title: 'ODP',
+        desc: 'Kelola titik distribusi (ODP) beserta kapasitas port-nya.',
+        steps: [
+          'Buka Jaringan → ODP → Tambah ODP.',
+          'Pilih OLT induk, isi jumlah port dan koordinat.',
+          'Saat menambah pelanggan FTTH, pilih port ODP yang tersedia.',
+        ],
+        tip: 'Penggunaan port ditampilkan otomatis (warna berubah saat hampir penuh).',
+      },
+      {
+        icon: MapIcon,
+        title: 'Peta Jaringan',
+        desc: 'Visualisasi OLT, ODP, jalur kabel, dan modem pelanggan di peta nyata.',
+        steps: [
+          'Buka Jaringan → Peta Jaringan.',
+          'Marker muncul otomatis dari data yang punya koordinat (OLT, ODP, pelanggan).',
+          'Aktifkan/nonaktifkan layer dan klik marker untuk detail.',
+        ],
+        tip: 'Peta kosong? Pastikan OLT/ODP/pelanggan sudah diisi koordinat GPS-nya.',
+      },
+      {
+        icon: IpamIcon,
+        title: 'IPAM (IP Pool)',
+        desc: 'Atur kumpulan IP yang dibagikan otomatis ke pelanggan oleh RADIUS.',
+        steps: [
+          'Buka Jaringan → IPAM → buat IP Pool (network, gateway, DNS).',
+          'Tautkan pool ke router.',
+          'RADIUS otomatis menetapkan IP ke pelanggan saat login.',
+        ],
+      },
+      {
+        icon: BandwidthIcon,
+        title: 'Monitoring Bandwidth',
+        desc: 'Pantau trafik real-time per interface dan konsumsi data pelanggan.',
+        steps: [
+          'Buka Jaringan → Konsumsi Data / Monitoring.',
+          'Pilih router & interface untuk melihat grafik real-time.',
+          'Limit kecepatan paket dikirim otomatis oleh RADIUS sesuai merek router.',
+        ],
+      },
     ],
   },
   {
-    id: 'customers',
-    title: 'Daftar Pelanggan',
+    key: 'administrasi',
+    label: 'Administrasi',
+    icon: AdminIcon,
+    color: '#ef4444',
+    intro: 'Konfigurasi inti operasional ISP: notifikasi WhatsApp, profil tenant, aturan tagihan, dan pembayaran online.',
+    topics: [
+      {
+        icon: WaIcon,
+        title: 'WhatsApp',
+        desc: 'Hubungkan WhatsApp untuk mengirim invoice, pengingat, dan notifikasi otomatis ke pelanggan.',
+        steps: [
+          'Buka Administrasi → WhatsApp → pindai QR Code dengan WhatsApp HP.',
+          'Atur template pesan (invoice, pengingat, konfirmasi bayar).',
+          'Gunakan variabel dinamis seperti {nama}, {jumlah}, {jatuh_tempo}, {link_bayar}.',
+        ],
+        tip: 'Variabel {link_bayar} mengirim tautan bayar mandiri — cocok untuk blast tagihan.',
+      },
+      {
+        icon: TenantIcon,
+        title: 'Tenant',
+        desc: 'Identitas bisnis Anda: nama ISP, logo, kontak, zona waktu, dan mata uang.',
+        steps: [
+          'Buka Administrasi → Tenant.',
+          'Lengkapi nama, logo, dan informasi kontak.',
+          'Data ini tampil di portal pelanggan, invoice, dan halaman bayar.',
+        ],
+      },
+      {
+        icon: BillingIcon,
+        title: 'Konfigurasi Billing',
+        desc: 'Aturan penagihan: kapan invoice dibuat, jatuh tempo, dan kapan pelanggan diisolir.',
+        steps: [
+          'Buka Administrasi → Tenant → Konfigurasi Billing.',
+          'Atur siklus tagihan, tanggal jatuh tempo, hari isolir, dan grace period.',
+          'Pilih jenis billing: tanggal tetap (fixed) atau prorata.',
+        ],
+        tip: 'Invoice, pengingat, dan isolir berjalan otomatis lewat penjadwal harian.',
+      },
+      {
+        icon: PaymentIcon,
+        title: 'Payment Gateway',
+        desc: 'Aktifkan pembayaran online (Tripay, Midtrans, Xendit) agar pelanggan bisa bayar mandiri.',
+        steps: [
+          'Buka Administrasi → Tenant → isi kredensial gateway (API key, secret).',
+          'Aktifkan mode Produksi (bukan sandbox) agar pembayaran nyata aktif.',
+          'Daftarkan URL webhook gateway sesuai petunjuk agar status lunas otomatis.',
+        ],
+        tip: 'Pembayaran online di portal & WhatsApp hanya aktif jika gateway dalam mode produksi.',
+      },
+    ],
+  },
+  {
+    key: 'pelanggan',
+    label: 'Pelanggan',
     icon: CustomerIcon,
     color: '#3b82f6',
-    gradient: 'linear-gradient(135deg, #3b82f6, #0ea5e9)',
-    desc: 'Tabel data pelanggan dengan filter, pencarian, dan status. Lengkap dengan aksi cepat.',
+    intro: 'Buat paket layanan, lalu daftarkan dan kelola pelanggan beserta tagihannya.',
+    topics: [
+      {
+        icon: PackageIcon,
+        title: 'Paket Internet',
+        desc: 'Definisikan paket layanan: kecepatan, harga, dan opsi burst.',
+        steps: [
+          'Buka Pelanggan → Paket → Tambah Paket.',
+          'Isi kecepatan upload/download, harga, dan burst limit (opsional).',
+          'Paket dipakai saat mendaftarkan pelanggan dan tampil di portal.',
+        ],
+        tip: 'Kecepatan paket otomatis diterapkan ke router via RADIUS saat pelanggan online.',
+      },
+      {
+        icon: CustomerIcon,
+        title: 'Daftar Pelanggan',
+        desc: 'Daftarkan dan kelola pelanggan, koneksi, lokasi, serta tagihan mereka.',
+        steps: [
+          'Buka Pelanggan → Daftar Pelanggan → Tambah Pelanggan.',
+          'Isi data pribadi, pilih paket, dan tipe koneksi (PPPoE / FTTH / Static).',
+          'Untuk FTTH, pilih port ODP dan isi koordinat modem (untuk Peta Jaringan).',
+          'Kelola status: aktif, isolir, atau lihat & catat pembayaran tagihan.',
+        ],
+        tip: 'Username & password PPPoE dibuat otomatis. Pelanggan bisa bayar online via portal.',
+      },
+    ],
   },
   {
-    id: 'network',
-    title: 'Monitoring Bandwidth',
-    icon: BandwidthIcon,
-    color: '#f97316',
-    gradient: 'linear-gradient(135deg, #f97316, #ef4444)',
-    desc: 'Pantau trafik router secara real-time dengan grafik Upload/Download yang intuitif.',
+    key: 'keuangan',
+    label: 'Keuangan',
+    icon: FinanceIcon,
+    color: '#22c55e',
+    intro: 'Kelola tagihan pelanggan, catat pengeluaran operasional, dan pantau laporan keuangan.',
+    topics: [
+      {
+        icon: InvoiceIcon,
+        title: 'Tagihan / Invoice',
+        desc: 'Invoice dibuat otomatis sesuai siklus billing, namun bisa juga dibuat manual.',
+        steps: [
+          'Buka Keuangan → Invoice untuk melihat semua tagihan.',
+          'Catat pembayaran manual (tunai/transfer) atau biarkan terbayar otomatis via gateway.',
+          'Status: belum bayar, lewat tempo, lunas — pelanggan menunggak otomatis diisolir sesuai aturan.',
+        ],
+        tip: 'Invoice & pengingat WhatsApp berjalan otomatis lewat penjadwal harian.',
+      },
+      {
+        icon: ExpenseIcon,
+        title: 'Pengeluaran',
+        desc: 'Catat biaya operasional ISP agar laba bersih terlihat jelas.',
+        steps: [
+          'Buka Keuangan → Pengeluaran → Tambah Pengeluaran.',
+          'Isi kategori, jumlah, dan keterangan (mis. sewa upstream, gaji, perangkat).',
+          'Pengeluaran ikut diperhitungkan di laporan keuangan.',
+        ],
+      },
+      {
+        icon: ReportIcon,
+        title: 'Laporan',
+        desc: 'Ringkasan pendapatan, pembayaran, dan performa bisnis Anda.',
+        steps: [
+          'Buka Keuangan → Laporan.',
+          'Lihat pendapatan, breakdown pembayaran, dan tren per periode.',
+          'Export laporan untuk arsip atau analisis lebih lanjut.',
+        ],
+      },
+    ],
+  },
+  {
+    key: 'layanan',
+    label: 'Layanan',
+    icon: ServiceIcon,
+    color: '#8b5cf6',
+    intro: 'Layani pelanggan lewat tiket dukungan, jual voucher hotspot, dan kirim notifikasi.',
+    topics: [
+      {
+        icon: TicketIcon,
+        title: 'Tiket',
+        desc: 'Tangani keluhan dan permintaan pelanggan secara terstruktur.',
+        steps: [
+          'Buka Layanan → Tiket untuk melihat tiket masuk.',
+          'Tetapkan (assign) tiket ke teknisi dan balas pesan pelanggan.',
+          'Tutup tiket setelah masalah selesai.',
+        ],
+      },
+      {
+        icon: VoucherIcon,
+        title: 'Voucher',
+        desc: 'Jual akses internet berbasis voucher (hotspot) dengan masa aktif & kuota.',
+        steps: [
+          'Buka Layanan → Voucher → buat produk voucher (kecepatan, durasi, harga).',
+          'Generate batch voucher untuk dijual.',
+          'Voucher aktif otomatis saat pertama login dan kedaluwarsa sesuai durasi.',
+        ],
+        tip: 'Voucher juga bisa dijual online via toko voucher publik dengan pembayaran gateway.',
+      },
+      {
+        icon: NotifIcon,
+        title: 'Notifikasi',
+        desc: 'Kirim pengumuman dan pemberitahuan ke pelanggan.',
+        steps: [
+          'Buka Layanan → Notifikasi.',
+          'Susun pesan dan pilih penerima.',
+          'Notifikasi billing otomatis (jatuh tempo, isolir) berjalan sendiri.',
+        ],
+      },
+    ],
+  },
+  {
+    key: 'marketing',
+    label: 'Marketing',
+    icon: MarketingIcon,
+    color: '#ec4899',
+    intro: 'Tingkatkan pertumbuhan pelanggan lewat program reward, referral, dan jaringan reseller.',
+    topics: [
+      {
+        icon: RewardIcon,
+        title: 'Reward',
+        desc: 'Beri hadiah/poin untuk mendorong loyalitas dan pembayaran tepat waktu.',
+        steps: [
+          'Buka Marketing → Reward → buat program reward.',
+          'Tentukan syarat dan hadiahnya.',
+          'Pantau klaim reward di Dashboard Reward.',
+        ],
+      },
+      {
+        icon: ReferralIcon,
+        title: 'Referral',
+        desc: 'Pelanggan mengajak pelanggan baru dan mendapat imbalan.',
+        steps: [
+          'Buka Marketing → Referral.',
+          'Pelanggan membagikan kode referral mereka.',
+          'Imbalan otomatis tercatat saat referral berhasil.',
+        ],
+      },
+      {
+        icon: ResellerIcon,
+        title: 'Reseller',
+        desc: 'Kelola mitra reseller beserta komisinya.',
+        steps: [
+          'Buka Marketing → Reseller → tambah reseller.',
+          'Atur komisi dan pantau penjualan mereka.',
+          'Bayarkan komisi yang tertunda dari menu reseller.',
+        ],
+      },
+    ],
   },
 ]
 
-// ============================================================
-// SETUP STEPS
-// ============================================================
-const setupSteps = [
-  {
-    step: 1,
-    icon: AuthIcon,
-    title: 'Registrasi & Login Akun',
-    desc: 'Buka halaman login dan masukkan kredensial Anda. Jika Anda adalah pemilik baru, Anda akan mendapatkan akses dari Administrator pusat.',
-    details: [
-      'Gunakan browser Chrome atau Edge terbaru',
-      'Pastikan token akses tersimpan dengan aman',
-    ],
-  },
-  {
-    step: 2,
-    icon: RouterIcon,
-    title: 'Integrasi Router MikroTik',
-    desc: 'Masuk ke menu Router, tambahkan router baru, dan ikuti panduan konfigurasi script untuk WireGuard dan RADIUS.',
-    details: [
-      'Salin script konfigurasi ke terminal MikroTik',
-      'Daftarkan Public Key WireGuard router ke dashboard',
-    ],
-  },
-  {
-    step: 3,
-    icon: PackageIcon,
-    title: 'Setup Paket & Pelanggan',
-    desc: 'Buat paket internet dengan limitasi bandwidth, lalu mulai daftarkan pelanggan Anda untuk mulai manajemen billing.',
-    details: [
-      'Atur harga dan kecepatan (Upload/Download)',
-      'Sinkronisasi profil ke router otomatis',
-    ],
-  },
-]
-
-// ============================================================
-// PAGE GROUPS
-// ============================================================
-const pageGroups = [
-  {
-    group: 'Operasional',
-    icon: LayoutIcon,
-    color: '#3b82f6',
-    pages: [
-      { name: 'Dashboard', route: '/dashboard', icon: DashboardIcon, badge: 'Main', badgeColor: '#6366f1',
-        desc: 'Ringkasan performa bisnis, status router, dan notifikasi sistem terbaru.' },
-      { name: 'Daftar Pelanggan', route: '/customers', icon: CustomerIcon, badge: 'CRM', badgeColor: '#3b82f6',
-        desc: 'Manajemen data pelanggan, paket, isolir otomatis, dan riwayat sesi.' },
-      { name: 'Invoice', route: '/invoices', icon: InvoiceIcon, badge: 'Billing', badgeColor: '#10b981',
-        desc: 'Manajemen tagihan, status pembayaran, dan pengiriman invoice PDF.' },
-    ],
-  },
-  {
-    group: 'Infrastruktur',
-    icon: NetworkIcon,
-    color: '#f97316',
-    pages: [
-      { name: 'Router', route: '/routers', icon: RouterIcon, badge: 'Network', badgeColor: '#f97316',
-        desc: 'Monitoring router, grafik bandwidth real-time, dan manajemen VPN WireGuard.' },
-      { name: 'OLT & ODP', route: '/olts', icon: OltIcon, badge: 'Fiber', badgeColor: '#0ea5e9',
-        desc: 'Manajemen perangkat fiber optik, status port, dan pemetaan jaringan.' },
-      { name: 'IPAM', route: '/ip-pools', icon: IpamIcon, badge: 'IP', badgeColor: '#8b5cf6',
-        desc: 'Kelola alokasi IP address, subnetting, dan pool untuk pelanggan.' },
-    ],
-  },
-]
-
-// ============================================================
-// QUICK TIPS
-// ============================================================
-const quickTips = [
-  { icon: MoonIcon, color: '#f59e0b', tip: 'Gunakan Dark Mode untuk kenyamanan mata saat bekerja di malam hari.' },
-  { icon: WaIcon, color: '#22c55e', tip: 'Aktifkan integrasi WhatsApp untuk pengiriman tagihan otomatis.' },
-  { icon: History, color: '#6366f1', tip: 'Cek riwayat koneksi VPN untuk mendiagnosa router yang sering terputus.' },
-  { icon: InfoIcon, color: '#3b82f6', tip: 'Gunakan fitur Monitoring Speed untuk mendeteksi pelanggan yang saturasi.' },
-]
+const activeKey = ref('jaringan')
+const active = computed(() => sections.find((s) => s.key === activeKey.value) || sections[0])
+function select(key: string) {
+  activeKey.value = key
+  // Scroll konten ke atas saat ganti bagian (mobile)
+  document.querySelector('.help-content')?.scrollTo({ top: 0, behavior: 'smooth' })
+}
 </script>
 
 <template>
   <div class="help-page">
-    <!-- ===== HERO HEADER ===== -->
-    <div class="hero-header">
-      <div class="hero-bg-shapes">
-        <div class="shape shape-1"></div>
-        <div class="shape shape-2"></div>
-        <div class="shape shape-3"></div>
-      </div>
-      <div class="hero-content">
-        <div class="hero-main">
-          <div class="hero-badge">
-            <n-icon :size="14" style="margin-right: 6px"><InfoIcon /></n-icon>
-            Pusat Bantuan v2.0
-          </div>
-          <h1>Apa yang bisa kami bantu?</h1>
-          <p>Pelajari cara memaksimalkan penggunaan platform Radius Server untuk bisnis ISP Anda.</p>
-        </div>
-        <div class="hero-stats">
-          <div v-for="s in [
-            { label: 'Halaman', value: '30+' },
-            { label: 'Fitur', value: '50+' },
-            { label: 'Keamanan', value: 'SSL' }
-          ]" :key="s.label" class="h-stat-item">
-            <div class="h-stat-val">{{ s.value }}</div>
-            <div class="h-stat-lab">{{ s.label }}</div>
-          </div>
-        </div>
-      </div>
+    <div class="help-hero">
+      <h1>Panduan Penggunaan</h1>
+      <p>Langkah demi langkah mengelola layanan internet Anda — dari jaringan hingga pelanggan.</p>
     </div>
 
-    <!-- ===== NAVIGATION TABS ===== -->
-    <n-tabs v-model:value="activeTab" type="segment" animated class="nav-tabs">
-      <!-- SETUP TAB -->
-      <n-tab-pane name="setup" tab="🚀 Memulai">
-        <div class="tab-content">
-          <div class="content-header">
-            <h2>Panduan Setup Cepat</h2>
-            <p>Ikuti langkah berikut untuk mengaktifkan sistem Anda dalam waktu kurang dari 10 menit.</p>
+    <div class="help-layout">
+      <!-- Sidebar -->
+      <aside class="help-sidebar">
+        <button
+          v-for="(s, i) in sections"
+          :key="s.key"
+          class="hs-item"
+          :class="{ active: activeKey === s.key }"
+          :style="activeKey === s.key ? { borderColor: s.color } : {}"
+          @click="select(s.key)"
+        >
+          <span class="hs-num" :style="{ background: activeKey === s.key ? s.color : undefined }">{{ i + 1 }}</span>
+          <span class="hs-icon" :style="{ color: s.color }"><n-icon :component="s.icon" :size="20" /></span>
+          <span class="hs-body">
+            <span class="hs-label">{{ s.label }}</span>
+            <span class="hs-count">{{ s.topics.length }} topik</span>
+          </span>
+          <n-icon class="hs-chev" :component="ChevIcon" :size="16" />
+        </button>
+      </aside>
+
+      <!-- Content -->
+      <main class="help-content">
+        <div class="hc-head" :style="{ borderColor: active.color }">
+          <div class="hc-head-icon" :style="{ background: active.color + '1a', color: active.color }">
+            <n-icon :component="active.icon" :size="26" />
           </div>
-          <div class="setup-grid">
-            <div v-for="(step, idx) in setupSteps" :key="idx" class="setup-item">
-              <div class="step-line" v-if="idx < setupSteps.length - 1"></div>
-              <div class="step-icon-wrap">
-                <n-icon :size="24"><component :is="step.icon" /></n-icon>
-                <div class="step-num">{{ step.step }}</div>
-              </div>
-              <div class="step-content">
-                <h3>{{ step.title }}</h3>
-                <p>{{ step.desc }}</p>
-                <div class="step-details">
-                  <div v-for="d in step.details" :key="d" class="step-detail-chip">{{ d }}</div>
-                </div>
-              </div>
-            </div>
+          <div>
+            <h2>{{ active.label }}</h2>
+            <p>{{ active.intro }}</p>
           </div>
         </div>
-      </n-tab-pane>
 
-      <!-- VISUAL TAB -->
-      <n-tab-pane name="visual" tab="📸 Antarmuka">
-        <div class="tab-content">
-          <div class="content-header">
-            <h2>Pratinjau Visual</h2>
-            <p>Kenali antarmuka aplikasi melalui pratinjau halaman-halaman utama.</p>
-          </div>
-          <div class="screenshot-list">
-            <div v-for="ss in screenshots" :key="ss.id" class="ss-card">
-              <div class="ss-browser" :style="{ background: ss.gradient }">
-                <div class="ss-bar">
-                  <div class="ss-dots"><span></span><span></span><span></span></div>
-                  <div class="ss-address">radius-dashboard/{{ ss.id }}</div>
-                </div>
-                <div class="ss-mock">
-                  <div class="ss-side"></div>
-                  <div class="ss-body">
-                    <div class="ss-top"></div>
-                    <div class="ss-grid">
-                      <div v-for="i in 4" :key="i" class="ss-box"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="ss-info">
-                <div class="ss-title">
-                  <n-icon :size="20" :color="ss.color"><component :is="ss.icon" /></n-icon>
-                  <span>{{ ss.title }}</span>
-                </div>
-                <p>{{ ss.desc }}</p>
+        <div class="hc-topics">
+          <article v-for="t in active.topics" :key="t.title" class="topic">
+            <div class="topic-head">
+              <span class="topic-icon" :style="{ color: active.color }"><n-icon :component="t.icon" :size="20" /></span>
+              <div>
+                <h3>{{ t.title }}</h3>
+                <p>{{ t.desc }}</p>
               </div>
             </div>
-          </div>
+
+            <ol class="topic-steps">
+              <li v-for="(step, si) in t.steps" :key="si">
+                <span class="ts-num" :style="{ background: active.color }">{{ si + 1 }}</span>
+                <span class="ts-text">{{ step }}</span>
+              </li>
+            </ol>
+
+            <div v-if="t.tip" class="topic-tip">
+              <n-icon :component="TipIcon" :size="16" class="tt-icon" />
+              <span>{{ t.tip }}</span>
+            </div>
+          </article>
         </div>
-      </n-tab-pane>
-
-      <!-- FEATURES TAB -->
-      <n-tab-pane name="features" tab="📋 Fitur">
-        <div class="tab-content">
-          <div v-for="group in pageGroups" :key="group.group" class="feat-group">
-            <div class="feat-group-header">
-              <n-icon :size="24" :color="group.color"><component :is="group.icon" /></n-icon>
-              <h3>{{ group.group }}</h3>
-            </div>
-            <div class="feat-grid">
-              <div v-for="pg in group.pages" :key="pg.name" class="feat-card" :style="{ '--accent': pg.badgeColor }">
-                <div class="feat-card-icon" :style="{ background: pg.badgeColor + '15', color: pg.badgeColor }">
-                  <n-icon :size="20"><component :is="pg.icon" /></n-icon>
-                </div>
-                <div class="feat-card-body">
-                  <div class="feat-card-head">
-                    <h4>{{ pg.name }}</h4>
-                    <n-tag size="tiny" :bordered="false" round :color="{ color: pg.badgeColor, textColor: 'white' }">{{ pg.badge }}</n-tag>
-                  </div>
-                  <p>{{ pg.desc }}</p>
-                  <code>{{ pg.route }}</code>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </n-tab-pane>
-
-      <!-- TIPS TAB -->
-      <n-tab-pane name="tips" tab="💡 Tips">
-        <div class="tab-content">
-          <div class="content-header">
-            <h2>Tips & Trik</h2>
-            <p>Beberapa fitur tersembunyi untuk meningkatkan produktivitas Anda.</p>
-          </div>
-          <div class="tips-container">
-            <div v-for="tip in quickTips" :key="tip.tip" class="tip-box">
-              <div class="tip-icon" :style="{ background: tip.color + '15', color: tip.color }">
-                <n-icon :size="22"><component :is="tip.icon" /></n-icon>
-              </div>
-              <p>{{ tip.tip }}</p>
-            </div>
-          </div>
-        </div>
-      </n-tab-pane>
-    </n-tabs>
-
-    <!-- FOOTER -->
-    <div class="help-footer">
-      <p>© 2026 Radius Server Management System. Butuh bantuan lebih lanjut?</p>
-      <n-button type="primary" secondary round>
-        <template #icon><n-icon><WaIcon /></n-icon></template>
-        Hubungi Support
-      </n-button>
+      </main>
     </div>
   </div>
 </template>
 
 <style scoped>
 .help-page {
-  max-width: 1000px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding-bottom: 40px;
-}
-
-/* HERO */
-.hero-header {
-  position: relative;
-  background: linear-gradient(135deg, #1e1e2f 0%, #11111d 100%);
-  border-radius: 24px;
-  padding: 48px 40px;
-  margin-bottom: 32px;
-  overflow: hidden;
-  color: white;
-}
-
-.hero-bg-shapes .shape {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(40px);
-  opacity: 0.15;
-}
-.shape-1 { width: 300px; height: 300px; background: #6366f1; top: -100px; right: -50px; }
-.shape-2 { width: 200px; height: 200px; background: #22c55e; bottom: -50px; left: -50px; }
-.shape-3 { width: 150px; height: 150px; background: #f59e0b; top: 20%; left: 30%; }
-
-.hero-content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: 32px;
-}
-
-.hero-main h1 { font-size: 32px; font-weight: 800; margin: 12px 0 8px; letter-spacing: -0.5px; }
-.hero-main p { opacity: 0.6; font-size: 16px; margin: 0; max-width: 480px; }
-
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #818cf8;
-}
-
-.hero-stats {
-  display: flex;
-  gap: 24px;
-}
-
-.h-stat-item { text-align: right; }
-.h-stat-val { font-size: 24px; font-weight: 800; color: white; }
-.h-stat-lab { font-size: 11px; text-transform: uppercase; opacity: 0.4; letter-spacing: 1px; }
-
-/* TABS */
-.nav-tabs {
-  margin-top: 16px;
-}
-
-.tab-content {
-  padding: 24px 0;
-}
-
-.content-header { margin-bottom: 32px; }
-.content-header h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
-.content-header p { opacity: 0.5; font-size: 14px; }
-
-/* SETUP */
-.setup-grid {
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 18px;
 }
 
-.setup-item {
-  display: flex;
-  gap: 24px;
-  position: relative;
-}
+/* Hero */
+.help-hero h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.4px; }
+.help-hero p { margin: 4px 0 0; font-size: 14px; opacity: 0.6; line-height: 1.5; }
 
-.step-line {
-  position: absolute;
-  left: 28px;
-  top: 60px;
-  bottom: -40px;
-  width: 2px;
-  background: rgba(128, 128, 128, 0.1);
-}
-
-.step-icon-wrap {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: rgba(99, 102, 241, 0.1);
-  color: #6366f1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  position: relative;
-}
-
-.step-num {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #6366f1;
-  color: white;
-  font-size: 11px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 2px solid var(--n-color);
-}
-
-.step-content h3 { margin: 0 0 8px; font-size: 18px; font-weight: 700; }
-.step-content p { margin: 0 0 16px; opacity: 0.6; line-height: 1.6; font-size: 14px; }
-
-.step-details { display: flex; gap: 8px; flex-wrap: wrap; }
-.step-detail-chip {
-  padding: 4px 12px;
-  background: rgba(128, 128, 128, 0.05);
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1px solid rgba(128, 128, 128, 0.1);
-}
-
-/* SCREENSHOTS */
-.screenshot-list {
+/* Layout */
+.help-layout {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
+  grid-template-columns: 248px 1fr;
+  gap: 18px;
+  align-items: start;
 }
 
-.ss-card {
-  border-radius: 20px;
-  overflow: hidden;
-  background: rgba(128, 128, 128, 0.02);
-  border: 1px solid rgba(128, 128, 128, 0.08);
-  transition: all 0.3s ease;
-}
-
-.ss-card:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
-
-.ss-browser { height: 180px; padding: 0; position: relative; overflow: hidden; }
-.ss-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: rgba(0,0,0,0.15); }
-.ss-dots { display: flex; gap: 6px; }
-.ss-dots span { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.2); }
-.ss-address { flex: 1; text-align: center; font-size: 10px; color: rgba(255,255,255,0.4); font-family: monospace; }
-
-.ss-mock { display: flex; height: 140px; }
-.ss-side { width: 40px; background: rgba(0,0,0,0.1); }
-.ss-body { flex: 1; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
-.ss-top { height: 16px; width: 60%; background: rgba(255,255,255,0.05); border-radius: 4px; }
-.ss-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.ss-box { height: 32px; background: rgba(255,255,255,0.05); border-radius: 6px; }
-
-.ss-info { padding: 16px 20px; }
-.ss-title { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-weight: 700; }
-.ss-info p { margin: 0; font-size: 13px; opacity: 0.6; line-height: 1.5; }
-
-/* FEATURES */
-.feat-group { margin-bottom: 40px; }
-.feat-group-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-.feat-group-header h3 { margin: 0; font-size: 18px; font-weight: 700; opacity: 0.8; }
-
-.feat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.feat-card {
+/* Sidebar */
+.help-sidebar {
   display: flex;
-  gap: 16px;
-  padding: 16px;
-  border-radius: 16px;
-  background: rgba(128, 128, 128, 0.02);
-  border: 1px solid rgba(128, 128, 128, 0.06);
-  transition: all 0.2s;
+  flex-direction: column;
+  gap: 8px;
+  position: sticky;
+  top: 12px;
 }
 
-.feat-card:hover { background: rgba(128, 128, 128, 0.05); border-color: var(--accent); }
-.feat-card-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.feat-card-body { flex: 1; min-width: 0; }
-.feat-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.feat-card-head h4 { margin: 0; font-size: 14px; font-weight: 700; }
-.feat-card-body p { margin: 0 0 8px; font-size: 12px; opacity: 0.6; line-height: 1.4; }
-.feat-card-body code { font-size: 10px; opacity: 0.3; }
+.hs-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 13px;
+  border: 1.5px solid rgba(128,128,128,0.14);
+  border-radius: 13px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.hs-item:hover { border-color: rgba(128,128,128,0.4); transform: translateY(-1px); }
+.hs-item.active { background: rgba(128,128,128,0.05); }
+:root.dark .hs-item.active { background: rgba(255,255,255,0.04); }
 
-/* TIPS */
-.tips-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.tip-box { display: flex; align-items: center; gap: 16px; padding: 20px; border-radius: 16px; background: rgba(128, 128, 128, 0.02); border: 1px solid rgba(128, 128, 128, 0.06); }
-.tip-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.tip-box p { margin: 0; font-size: 14px; font-weight: 500; opacity: 0.8; }
+.hs-num {
+  width: 24px; height: 24px; flex-shrink: 0;
+  border-radius: 7px;
+  background: rgba(128,128,128,0.18);
+  color: #fff; font-size: 12px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.hs-icon { flex-shrink: 0; display: flex; }
+.hs-body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.hs-label { font-size: 14px; font-weight: 700; }
+.hs-count { font-size: 11px; opacity: 0.45; }
+.hs-chev { opacity: 0.3; flex-shrink: 0; }
+.hs-item.active .hs-chev { opacity: 0.7; }
 
-/* FOOTER */
-.help-footer { margin-top: 48px; padding-top: 32px; border-top: 1px solid rgba(128,128,128,0.1); text-align: center; }
-.help-footer p { opacity: 0.4; font-size: 13px; margin-bottom: 16px; }
+/* Content */
+.help-content {
+  min-width: 0;
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
 
-@media (max-width: 768px) {
-  .hero-content { flex-direction: column; align-items: flex-start; }
-  .hero-stats { width: 100%; justify-content: space-between; }
-  .screenshot-list, .feat-grid, .tips-container { grid-template-columns: 1fr; }
+.hc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 18px;
+  border-left: 4px solid;
+  border-radius: 14px;
+  background: rgba(128,128,128,0.04);
+  margin-bottom: 16px;
+}
+:root.dark .hc-head { background: rgba(255,255,255,0.03); }
+.hc-head-icon {
+  width: 48px; height: 48px; border-radius: 13px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.hc-head h2 { margin: 0; font-size: 19px; font-weight: 800; }
+.hc-head p { margin: 4px 0 0; font-size: 13px; opacity: 0.65; line-height: 1.5; }
+
+.hc-topics { display: flex; flex-direction: column; gap: 14px; }
+
+.topic {
+  border: 1px solid rgba(128,128,128,0.12);
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+:root.dark .topic { border-color: rgba(255,255,255,0.08); }
+
+.topic-head { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 14px; }
+.topic-icon { flex-shrink: 0; margin-top: 2px; }
+.topic-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.topic-head p { margin: 3px 0 0; font-size: 13px; opacity: 0.62; line-height: 1.5; }
+
+.topic-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.topic-steps li { display: flex; align-items: flex-start; gap: 10px; }
+.ts-num {
+  width: 21px; height: 21px; flex-shrink: 0; margin-top: 1px;
+  border-radius: 50%; color: #fff; font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.ts-text { font-size: 13.5px; line-height: 1.5; }
+
+.topic-tip {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 14px; padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  font-size: 12.5px; line-height: 1.5;
+}
+.tt-icon { color: #f59e0b; flex-shrink: 0; margin-top: 1px; }
+
+/* ── Mobile ── */
+@media (max-width: 860px) {
+  .help-layout { grid-template-columns: 1fr; }
+  .help-sidebar {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .help-sidebar::-webkit-scrollbar { display: none; }
+  .hs-item { flex: 0 0 auto; min-width: 150px; }
+  .hs-chev { display: none; }
+  .help-content { max-height: none; overflow: visible; }
+}
+
+@media (max-width: 480px) {
+  .help-hero h1 { font-size: 20px; }
+  .hc-head { padding: 14px; }
+  .topic { padding: 14px; }
 }
 </style>

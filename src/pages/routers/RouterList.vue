@@ -24,16 +24,43 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 
 const form = ref({
   name: '',
+  router_type: 'mikrotik',
   is_active: true,
 })
 
 function resetForm() {
-  form.value = { name: '', is_active: true }
+  form.value = { name: '', router_type: 'mikrotik', is_active: true }
   editId.value = null
+  typeSearch.value = ''
 }
 
-// Create form only needs name
-const createForm = ref({ name: '' })
+// Create form needs name + router type
+const createForm = ref({ name: '', router_type: 'mikrotik' })
+
+const routerTypeOptions = [
+  { label: 'MikroTik', sub: 'RouterOS', value: 'mikrotik', desc: 'IP Publik & WireGuard VPN', badge: 'WireGuard', color: '#e11d48' },
+  { label: 'VyOS / EdgeRouter', sub: 'VyOS / EdgeOS', value: 'vyos', desc: 'IP Publik & WireGuard VPN', badge: 'WireGuard', color: '#0891b2' },
+  { label: 'Cisco', sub: 'IOS / IOS-XE', value: 'cisco', desc: 'AAA RADIUS via IP Publik', badge: 'IP Publik', color: '#2563eb' },
+  { label: 'Huawei', sub: 'VRP / BRAS', value: 'huawei', desc: 'RADIUS template via IP Publik', badge: 'IP Publik', color: '#dc2626' },
+  { label: 'Juniper', sub: 'JunOS', value: 'juniper', desc: 'access-profile RADIUS', badge: 'IP Publik', color: '#0d9488' },
+  { label: 'Ruijie', sub: 'RG-OS', value: 'ruijie', desc: 'RADIUS via IP Publik', badge: 'IP Publik', color: '#7c3aed' },
+]
+// Pemilih jenis router (kartu + search), dipakai create & edit
+const typeSearch = ref('')
+const filteredTypes = computed(() => {
+  const q = typeSearch.value.toLowerCase().trim()
+  if (!q) return routerTypeOptions
+  return routerTypeOptions.filter(o =>
+    o.label.toLowerCase().includes(q) ||
+    o.sub.toLowerCase().includes(q) ||
+    o.value.includes(q) ||
+    o.desc.toLowerCase().includes(q),
+  )
+})
+const selectedRouterType = computed<string>({
+  get: () => (editId.value ? form.value.router_type : createForm.value.router_type),
+  set: (v) => { if (editId.value) form.value.router_type = v; else createForm.value.router_type = v },
+})
 
 function formatBytes(b: number | null) {
   if (!b) return '-'
@@ -159,8 +186,10 @@ function openEdit(r: any) {
   editId.value = r.id
   form.value = {
     name: r.name,
+    router_type: r.router_type || 'mikrotik',
     is_active: r.is_active,
   }
+  typeSearch.value = ''
   showModal.value = true
 }
 
@@ -174,12 +203,12 @@ async function handleSave() {
       message.success('Router diperbarui')
     } else {
       if (!createForm.value.name) { message.warning('Nama router wajib diisi'); saving.value = false; return }
-      await routerApi.create({ name: createForm.value.name.toUpperCase() })
-      message.success('VPN Router berhasil didaftarkan')
+      await routerApi.create({ name: createForm.value.name.toUpperCase(), router_type: createForm.value.router_type })
+      message.success('Router berhasil didaftarkan')
     }
     showModal.value = false
     resetForm()
-    createForm.value = { name: '' }
+    createForm.value = { name: '', router_type: 'mikrotik' }
     fetchData()
   } catch (e: any) {
     message.error(e.response?.data?.error || 'Gagal menyimpan')
@@ -315,34 +344,66 @@ onMounted(fetchData)
     </div>
   </div>
 
-  <n-modal v-model:show="showModal" preset="card" :title="editId ? 'Edit VPN Router' : 'Daftarkan VPN Router Baru'" :style="{ maxWidth: '460px', width: '90vw' }">
+  <n-modal v-model:show="showModal" preset="card" :title="editId ? 'Edit Router' : 'Daftarkan Router Baru'" :style="{ maxWidth: '680px', width: '94vw' }">
     <n-form label-placement="top" :show-feedback="false">
-      <!-- CREATE MODE -->
-      <template v-if="!editId">
-        <n-alert type="info" :bordered="false" style="margin-bottom: 16px">
-          Masukkan nama router. VPN IP, RADIUS Secret, CoA Port, dan Heartbeat Token akan di-generate otomatis oleh sistem.
-        </n-alert>
-        <n-form-item label="Nama Router *">
-          <n-input v-model:value="createForm.name" placeholder="Contoh: ROUTER-PERUMAHAN-A" style="text-transform: uppercase" />
-        </n-form-item>
-      </template>
+      <n-alert v-if="!editId" type="info" :bordered="false" style="margin-bottom: 16px; font-size: 13px">
+        RADIUS Secret, CoA Port, dan Heartbeat Token di-generate otomatis. Panduan konfigurasi menyesuaikan jenis router yang dipilih.
+      </n-alert>
 
-      <!-- EDIT MODE -->
-      <template v-else>
+      <div class="rf-grid">
+        <!-- Nama + status -->
         <n-form-item label="Nama Router *">
-          <n-input v-model:value="form.name" placeholder="ROUTER-PERUMAHAN-A" style="text-transform: uppercase" />
+          <n-input
+            :value="editId ? form.name : createForm.name"
+            placeholder="Contoh: ROUTER-PERUMAHAN-A"
+            style="text-transform: uppercase"
+            size="large"
+            @update:value="(v: string) => editId ? (form.name = v) : (createForm.name = v)"
+          />
         </n-form-item>
-        <n-form-item label="Status">
-          <n-space align="center" style="height: 34px">
+        <n-form-item v-if="editId" label="Status">
+          <n-space align="center" style="height: 40px">
             <n-switch v-model:value="form.is_active" />
             <n-text :depth="form.is_active ? 1 : 3">{{ form.is_active ? 'Aktif' : 'Nonaktif' }}</n-text>
           </n-space>
         </n-form-item>
-      </template>
+      </div>
+
+      <!-- Pemilih jenis router (kartu + search) -->
+      <div class="rf-type-head">
+        <span class="rf-type-title">Jenis Router *</span>
+        <n-input v-model:value="typeSearch" placeholder="Cari merek..." size="small" clearable class="rf-type-search">
+          <template #prefix><n-icon :component="Search" :size="14" style="opacity:0.5" /></template>
+        </n-input>
+      </div>
+
+      <div class="rf-type-grid">
+        <button
+          v-for="t in filteredTypes"
+          :key="t.value"
+          type="button"
+          class="rf-type-card"
+          :class="{ active: selectedRouterType === t.value }"
+          :style="selectedRouterType === t.value ? { borderColor: t.color, boxShadow: `0 0 0 1px ${t.color}` } : {}"
+          @click="selectedRouterType = t.value"
+        >
+          <div class="rf-type-icon" :style="{ background: t.color }">{{ t.label.charAt(0) }}</div>
+          <div class="rf-type-body">
+            <div class="rf-type-name">
+              {{ t.label }}
+              <span class="rf-type-badge" :style="{ color: t.color, background: t.color + '1a' }">{{ t.badge }}</span>
+            </div>
+            <div class="rf-type-sub">{{ t.sub }}</div>
+            <div class="rf-type-desc">{{ t.desc }}</div>
+          </div>
+          <div v-if="selectedRouterType === t.value" class="rf-type-check" :style="{ color: t.color }">✓</div>
+        </button>
+        <div v-if="!filteredTypes.length" class="rf-type-empty">Tidak ada merek cocok dengan "{{ typeSearch }}"</div>
+      </div>
 
       <div class="modal-actions">
         <n-button @click="showModal = false">Batal</n-button>
-        <n-button type="primary" :loading="saving" @click="handleSave">{{ editId ? 'Perbarui Router' : 'Daftarkan Router' }}</n-button>
+        <n-button type="primary" size="large" :loading="saving" @click="handleSave">{{ editId ? 'Perbarui Router' : 'Daftarkan Router' }}</n-button>
       </div>
     </n-form>
   </n-modal>
@@ -497,7 +558,85 @@ onMounted(fetchData)
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 4px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(128,128,128,0.1);
+}
+
+/* ── Router register form ── */
+.rf-grid {
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.rf-type-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.rf-type-title { font-size: 13px; font-weight: 600; }
+.rf-type-search { width: 200px; }
+
+.rf-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.rf-type-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1.5px solid rgba(128,128,128,0.16);
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.rf-type-card:hover { border-color: rgba(128,128,128,0.4); transform: translateY(-1px); }
+.rf-type-card.active { background: rgba(128,128,128,0.04); }
+:root.dark .rf-type-card.active { background: rgba(255,255,255,0.03); }
+
+.rf-type-icon {
+  width: 38px; height: 38px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 18px;
+}
+
+.rf-type-body { min-width: 0; flex: 1; }
+.rf-type-name {
+  font-size: 14px; font-weight: 700; line-height: 1.3;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.rf-type-badge {
+  font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.rf-type-sub { font-size: 11.5px; opacity: 0.5; margin-top: 1px; font-family: ui-monospace, monospace; }
+.rf-type-desc { font-size: 12px; opacity: 0.65; margin-top: 4px; line-height: 1.35; }
+
+.rf-type-check {
+  position: absolute; top: 10px; right: 12px;
+  font-size: 16px; font-weight: 800;
+}
+
+.rf-type-empty {
+  grid-column: 1 / -1; text-align: center; padding: 24px;
+  font-size: 13px; opacity: 0.5;
+}
+
+@media (max-width: 560px) {
+  .rf-grid { grid-template-columns: 1fr; }
+  .rf-type-grid { grid-template-columns: 1fr; }
+  .rf-type-search { width: 140px; }
 }
 
 /* ── Tablet 2-col ── */
