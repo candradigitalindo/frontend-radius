@@ -197,6 +197,34 @@ const pgProviderOptions = [
   { label: 'Xendit', value: 'xendit' },
 ]
 
+// Field per provider menyesuaikan istilah & kebutuhan masing-masing gateway.
+// Mapping ini HARUS cocok dengan backend (loadSAPGConfig & TestPGConnection):
+//   pg_api_key    -> Xendit Secret API Key / Tripay API Key   (Midtrans: tidak dipakai)
+//   pg_secret_key -> Midtrans Server Key / Xendit Webhook Token / Tripay Private Key
+//   pg_merchant_id-> Tripay Merchant Code                     (lainnya: tidak dipakai)
+const pgFields = computed(() => {
+  switch (form.pg_provider) {
+    case 'xendit':
+      return {
+        apiKey:    { show: true,  label: 'Secret API Key', ph: 'xnd_production_... / xnd_development_...', hint: 'Dashboard Xendit → Settings → API Keys (Secret Key)' },
+        secretKey: { show: true,  label: 'Webhook Verification Token', ph: 'Token verifikasi callback', hint: 'Dashboard Xendit → Settings → Webhooks → Verification Token' },
+        merchant:  { show: false, label: '', ph: '', hint: '' },
+      }
+    case 'tripay':
+      return {
+        apiKey:    { show: true,  label: 'API Key', ph: 'API Key Tripay', hint: 'Tripay → Merchant → API Key' },
+        secretKey: { show: true,  label: 'Private Key', ph: 'Private Key Tripay', hint: 'Tripay → Merchant → Private Key' },
+        merchant:  { show: true,  label: 'Merchant Code', ph: 'Contoh: T1234', hint: 'Tripay → Merchant → Kode Merchant' },
+      }
+    default: // midtrans
+      return {
+        apiKey:    { show: false, label: '', ph: '', hint: '' },
+        secretKey: { show: true,  label: 'Server Key', ph: 'Mid-server-xxxxxxxx', hint: 'Midtrans Dashboard → Settings → Access Keys → Server Key' },
+        merchant:  { show: false, label: '', ph: '', hint: '' },
+      }
+  }
+})
+
 const timezoneOptions = [
   { label: 'Asia/Jakarta (WIB, UTC+7)', value: 'Asia/Jakarta' },
   { label: 'Asia/Makassar (WITA, UTC+8)', value: 'Asia/Makassar' },
@@ -247,7 +275,13 @@ async function saveSettings() {
 async function testPG() {
   testingPG.value = true
   try {
-    const { data } = await adminApi.testPG()
+    const { data } = await adminApi.testPG({
+      pg_provider: form.pg_provider,
+      pg_api_key: form.pg_api_key,
+      pg_secret_key: form.pg_secret_key,
+      pg_merchant_id: form.pg_merchant_id,
+      pg_sandbox: form.pg_sandbox,
+    })
     if (data.success) {
       pgStatus.value = 'connected'
       message.success(data.message || 'Payment gateway terhubung')
@@ -297,16 +331,29 @@ function copyWebhook(event: string) {
   })
 }
 
+// Keep WA status fresh even when already connected, so the UI promptly reflects
+// a dropped/reconnecting session (otherwise it shows a stale "Terhubung").
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
+async function refreshStatusQuietly() {
+  if (qrPollTimer) return // QR pairing flow already syncs status
+  try {
+    const res = await adminApi.waGetStatus()
+    sessionStatus.value = res.data?.data || res.data || {}
+  } catch { /* ignore transient errors */ }
+}
+
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
   loadSettings()
   loadWASession()
   loadWebhookUrls()
+  statusPollTimer = setInterval(refreshStatusQuietly, 20000)
 })
 
 onUnmounted(() => {
   stopQRPolling()
+  if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null }
   window.removeEventListener('resize', checkMobile)
 })
 </script>
@@ -527,43 +574,46 @@ onUnmounted(() => {
                     />
                   </n-form-item>
                 </n-grid-item>
-                <n-grid-item span="2 m:1">
-                  <n-form-item label="Merchant ID">
+                <n-grid-item v-if="pgFields.merchant.show" span="2 m:1">
+                  <n-form-item :label="pgFields.merchant.label">
                     <n-input
                       v-model:value="form.pg_merchant_id"
-                      placeholder="Masukkan Merchant ID"
+                      :placeholder="pgFields.merchant.ph"
                       clearable
                     />
+                    <template #feedback><span class="pg-hint">{{ pgFields.merchant.hint }}</span></template>
                   </n-form-item>
                 </n-grid-item>
-                <n-grid-item span="2 m:1">
-                  <n-form-item label="API Key / Client Key">
+                <n-grid-item v-if="pgFields.apiKey.show" span="2 m:1">
+                  <n-form-item :label="pgFields.apiKey.label">
                     <n-input-group>
                       <n-input
                         v-model:value="form.pg_api_key"
                         :type="showPGKey ? 'text' : 'password'"
-                        placeholder="Masukkan API Key"
+                        :placeholder="pgFields.apiKey.ph"
                         clearable
                       />
                       <n-button @click="showPGKey = !showPGKey" style="width: 40px">
                         <n-icon :component="showPGKey ? EyeOffOutline : EyeOutline" />
                       </n-button>
                     </n-input-group>
+                    <template #feedback><span class="pg-hint">{{ pgFields.apiKey.hint }}</span></template>
                   </n-form-item>
                 </n-grid-item>
                 <n-grid-item span="2 m:1">
-                  <n-form-item label="Secret Key / Server Key">
+                  <n-form-item :label="pgFields.secretKey.label">
                     <n-input-group>
                       <n-input
                         v-model:value="form.pg_secret_key"
                         :type="showPGSecret ? 'text' : 'password'"
-                        placeholder="Masukkan Secret Key"
+                        :placeholder="pgFields.secretKey.ph"
                         clearable
                       />
                       <n-button @click="showPGSecret = !showPGSecret" style="width: 40px">
                         <n-icon :component="showPGSecret ? EyeOffOutline : EyeOutline" />
                       </n-button>
                     </n-input-group>
+                    <template #feedback><span class="pg-hint">{{ pgFields.secretKey.hint }}</span></template>
                   </n-form-item>
                 </n-grid-item>
                 <n-grid-item span="2">
@@ -776,6 +826,12 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.pg-hint {
+  font-size: 11.5px;
+  opacity: 0.55;
+  line-height: 1.4;
+}
+
 .sa-settings {
   max-width: 900px;
   margin: 0 auto;

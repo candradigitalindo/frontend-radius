@@ -16,4 +16,5 @@ export const routerApi = {
   vpnKey: (id: string, data: { public_key: string }) => http.post(`/routers/${id}/vpn-key`, data),
   mikrotikConfig: (id: string) => http.get(`/routers/${id}/mikrotik-config`),
   interfaces: (id: string) => http.get(`/routers/${id}/interfaces`),
+  interfaceStats: (id: string, minutes = 10) => http.get(`/routers/${id}/interface-stats`, { params: { minutes } }),
 }

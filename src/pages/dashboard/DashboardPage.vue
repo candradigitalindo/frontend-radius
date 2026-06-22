@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { NCard, NIcon, NSpin, NText, useMessage } from 'naive-ui'
 import { Users as UsersIcon, Wifi, Ban, CurrencyDollar, CircleCheck, FileInvoice, Activity, Message, ChartBar, ChartPie, TrendingUp } from '@vicons/tabler'
 import { use } from 'echarts/core'
@@ -40,15 +40,7 @@ const formatRupiah = (v: number) => {
 
 const formatFullRupiah = (v: number) => 'Rp ' + (v || 0).toLocaleString('id-ID')
 
-onMounted(async () => {
-  // Ensure user is authenticated before making API calls
-  if (!authStore.isAuthenticated) {
-    message.warning('Sesi Anda telah habis. Silakan login kembali.')
-    // Redirect to login page
-    window.location.href = '/login'
-    return
-  }
-
+async function loadDashboard() {
   try {
     const [s, r] = await Promise.all([
       dashboardApi.stats().catch(err => {
@@ -71,7 +63,30 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+}
+
+// Silent refresh of the fast-changing stats (online count, sessions, etc.).
+async function refreshStatsSilently() {
+  try {
+    const s = await dashboardApi.stats()
+    stats.value = s.data?.data || s.data || stats.value
+  } catch { /* ignore transient errors */ }
+}
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  // Ensure user is authenticated before making API calls
+  if (!authStore.isAuthenticated) {
+    message.warning('Sesi Anda telah habis. Silakan login kembali.')
+    window.location.href = '/login'
+    return
+  }
+  loadDashboard()
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshStatsSilently()
+  }, 30000)
 })
+onUnmounted(() => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } })
 
 const statCards = computed(() => {
   const d = themeStore.isDark

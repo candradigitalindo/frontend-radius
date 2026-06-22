@@ -22,7 +22,7 @@ export const adminApi = {
   // SuperAdmin Settings
   getSettings: () => http.get('/admin/settings'),
   updateSettings: (data: Record<string, any>) => http.put('/admin/settings', data),
-  testPG: () => http.post('/admin/settings/test-pg'),
+  testPG: (data?: Record<string, any>) => http.post('/admin/settings/test-pg', data || {}),
 
   // SuperAdmin WhatsApp Session (dedicated endpoints)
   waStartSession: () => http.post('/admin/wa/start'),

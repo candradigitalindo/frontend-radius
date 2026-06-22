@@ -64,6 +64,9 @@ const vpnKeySubmitting = ref(false)
 const vpnStatus = ref<any>(null)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
+// Router dianggap memakai VPN hanya jika public key WireGuard sudah terdaftar.
+const usingVpn = computed(() => !!routerData.value.vpn_public_key)
+
 // Mode koneksi: 'direct' = IP Publik (ROS 6 & 7), 'wireguard' = VPN WireGuard (ROS 7+)
 const connectionMode = ref<'direct' | 'wireguard'>('direct')
 
@@ -153,6 +156,26 @@ const heartbeatScript = computed(() => {
   :local payload "{\\"token\\":\\"$token\\",\\"identity\\":\\"$identity\\",\\"cpu_load\\":$cpuLoad,\\"free_memory\\":$freeMem,\\"total_memory\\":$totalMem,\\"uptime\\":\\"$uptime\\",\\"board_name\\":\\"$boardName\\",\\"router_os_ver\\":\\"$osVer\\"}"
   /tool fetch url="${heartbeatUrl.value}" http-method=post http-header-field="Content-Type: application/json" http-data=\$payload output=none
 } comment="Radius Heartbeat"
+`
+})
+
+// Pengiriman counter interface (push) — agar monitoring bandwidth jalan TANPA VPN.
+const ifMonitorUrl = computed(() => (heartbeatUrl.value || '').replace('/heartbeat', '/interface-stats'))
+const ifMonitorScript = computed(() => {
+  return `/system scheduler remove [find name="radius-ifmonitor"]
+/system scheduler add name=radius-ifmonitor interval=00:00:05 on-event={
+  :local token "${heartbeatToken.value}"
+  :local arr ""
+  :foreach i in=[/interface find where !dynamic] do={
+    :local nm [/interface get \$i name]
+    :local rx [/interface get \$i rx-byte]
+    :local tx [/interface get \$i tx-byte]
+    :if (\$arr != "") do={ :set arr (\$arr . ",") }
+    :set arr (\$arr . "{\\"name\\":\\"\$nm\\",\\"rx_bytes\\":\$rx,\\"tx_bytes\\":\$tx}")
+  }
+  :local payload "{\\"token\\":\\"\$token\\",\\"interfaces\\":[\$arr]}"
+  /tool fetch url="${ifMonitorUrl.value}" http-method=post http-header-field="Content-Type: application/json" http-data=\$payload output=none
+} comment="Radius Interface Monitor"
 `
 })
 
@@ -402,15 +425,26 @@ async function fetchMikrotikConfig() {
     mikrotikConfig.value = cfg
     if (cfg.server_endpoint) serverPublicIP.value = cfg.server_endpoint
     if (cfg.server_public_key) serverPublicKey.value = cfg.server_public_key
+    // Pilih mode otomatis sesuai cara router terdaftar (VPN vs IP Publik),
+    // hanya untuk vendor yang mendukung WireGuard.
+    if ((cfg.mode === 'wireguard' || cfg.mode === 'direct') && supportsWireguard.value) {
+      connectionMode.value = cfg.mode
+    }
   } catch {
     // fallback: use locally computed scripts
   }
   configLoading.value = false
 }
 
+// WireGuard hanya bisa didaftarkan bila server menjalankan WireGuard (punya server public key).
+const wgServerReady = computed(() => !!effectiveServerPublicKey.value)
+
 async function handleSubmitVpnKey() {
   const key = vpnKeyInput.value.trim()
   if (!key) return message.warning('Masukkan public key WireGuard router')
+  if (!wgServerReady.value) {
+    return message.error('WireGuard belum aktif di server. Gunakan mode IP Publik, atau aktifkan WireGuard di server terlebih dahulu.')
+  }
   vpnKeySubmitting.value = true
   try {
     await routerApi.vpnKey(id, { public_key: key })
@@ -419,8 +453,9 @@ async function handleSubmitVpnKey() {
     message.success('VPN public key berhasil didaftarkan')
     // Refresh config after key registration
     fetchMikrotikConfig()
-  } catch {
-    message.error('Gagal mendaftarkan VPN public key')
+  } catch (e: any) {
+    // Tampilkan alasan asli dari server (mis. "WireGuard tidak tersedia").
+    message.error(e?.response?.data?.error || 'Gagal mendaftarkan VPN public key')
   }
   vpnKeySubmitting.value = false
 }
@@ -567,26 +602,59 @@ async function fetchIpPool() {
 const activeTab = ref('history')
 const interfaces = ref<any[]>([])
 const loadingInterfaces = ref(false)
+const interfacesError = ref('')
 const selectedInterfaces = ref<string[]>([])
 const isMonitoring = ref(false)
 const bandwidthHistory = ref<Record<string, { in: number[], out: number[], timestamps: string[] }>>({})
 const MAX_DATA_POINTS = 30
 let ws: WebSocket | null = null
 
-async function fetchInterfaces() {
-  loadingInterfaces.value = true
+// Ambil statistik interface yang DIKIRIM (push) oleh router — tanpa SNMP/VPN.
+// Router mengirim counter rx/tx; server menghitung bit/s dari deltanya.
+async function loadPushStats() {
   try {
-    const { data: res } = await routerApi.interfaces(id)
-    interfaces.value = (res.data || res).map((i: any) => ({
-      label: i.name + (i.comment ? ` (${i.comment})` : ''),
-      value: i.name
-    }))
-  } catch {
-    message.error('Gagal mengambil daftar interface')
-  } finally {
-    loadingInterfaces.value = false
+    const { data: res } = await routerApi.interfaceStats(id, 10)
+    const d = res.data || res || {}
+    interfacesError.value = ''
+    if (Array.isArray(d.interfaces)) {
+      // Sembunyikan sesi dinamis PPPoE (nama dibungkus <...>) agar dropdown rapi —
+      // hanya interface fisik/statis (ether, sfp, bridge, vlan, dll).
+      interfaces.value = d.interfaces
+        .filter((n: string) => !n.startsWith('<'))
+        .map((n: string) => ({ label: n, value: n }))
+    }
+    // Grafik HANYA untuk interface yang dipilih — cegah legenda penuh sesak
+    // saat ada banyak interface (mis. ratusan sesi PPPoE).
+    const sel = selectedInterfaces.value
+    const hist: Record<string, { in: number[], out: number[], timestamps: string[] }> = {}
+    if (sel.length) {
+      for (const s of (d.samples || [])) {
+        if (!sel.includes(s.iface)) continue
+        if (!hist[s.iface]) hist[s.iface] = { in: [], out: [], timestamps: [] }
+        hist[s.iface].in.push(s.rx_bps)
+        hist[s.iface].out.push(s.tx_bps)
+        hist[s.iface].timestamps.push(new Date(s.sampled_at).toLocaleTimeString('id-ID', { hour12: false }))
+      }
+    }
+    bandwidthHistory.value = hist
+    if (!d.interfaces || d.interfaces.length === 0) {
+      interfacesError.value = 'Belum ada data dari router. Aktifkan scheduler "radius-ifmonitor" di router (lihat panduan Konfigurasi) — data muncul dalam ±30 detik.'
+    }
+  } catch (e: any) {
+    interfacesError.value = e?.response?.data?.error || 'Gagal memuat statistik interface'
   }
 }
+
+// Dipakai tombol "Coba Lagi" & saat membuka tab Bandwidth.
+async function fetchInterfaces() {
+  if (loadingInterfaces.value) return
+  loadingInterfaces.value = true
+  await loadPushStats()
+  loadingInterfaces.value = false
+}
+
+// Memilih interface langsung menampilkan grafiknya (tanpa harus klik Mulai dulu).
+watch(selectedInterfaces, () => { if (!isMonitoring.value) loadPushStats() })
 
 function formatBitsPerSecond(bps: number) {
   if (bps === 0) return '0 bps'
@@ -679,75 +747,25 @@ function handleBandwidthData(msg: any) {
   })
 }
 
+let pushPollTimer: ReturnType<typeof setInterval> | null = null
+
 function startMonitoring() {
   if (!selectedInterfaces.value.length) {
     return message.warning('Pilih interface yang akan dipantau')
   }
-
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
-  let wsUrl = ''
-  
-  if (baseUrl.startsWith('http')) {
-    // Try to use the same prefix as API (e.g. /api/v1/ws)
-    wsUrl = baseUrl.replace(/^http/, 'ws') + '/ws'
-  } else {
-    // Fallback or relative path - use current host and Vite proxy
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    wsUrl = `${protocol}//${window.location.host}/ws`
-  }
-
-  // Add token if available
-  const token = getStoredAccessToken()
-  if (token) {
-    wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + token
-  }
-
-  try {
-    ws = new WebSocket(wsUrl)
-    ws.onopen = () => {
-      isMonitoring.value = true
-      bandwidthHistory.value = {} // Clear old data
-      ws?.send(JSON.stringify({
-        action: 'monitor_router',
-        router_id: id,
-        interfaces: selectedInterfaces.value
-      }))
-    }
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        if (msg.type === 'router_bandwidth') {
-          handleBandwidthData(msg)
-        }
-      } catch (err) {
-        console.error('Failed to parse WS message', err)
-      }
-    }
-    ws.onclose = () => {
-      isMonitoring.value = false
-    }
-    ws.onerror = () => {
-      message.error('Koneksi monitoring terputus')
-      isMonitoring.value = false
-    }
-  } catch (err) {
-    message.error('Gagal menghubungkan ke server monitoring')
-  }
+  isMonitoring.value = true
+  loadPushStats()
+  if (pushPollTimer) clearInterval(pushPollTimer)
+  // Poll data push tiap 5 detik (selaras dgn interval kirim router).
+  pushPollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') loadPushStats()
+  }, 5000)
 }
 
 function stopMonitoring() {
-  if (ws) {
-    ws.close()
-    ws = null
-  }
+  if (pushPollTimer) { clearInterval(pushPollTimer); pushPollTimer = null }
   isMonitoring.value = false
 }
-
-watch(activeTab, (val) => {
-  if (val === 'bandwidth' && !interfaces.value.length && routerData.value.is_online) {
-    fetchInterfaces()
-  }
-})
 
 async function fetchData() {
   try {
@@ -760,10 +778,11 @@ async function fetchData() {
     if (rRes.data?.server_public_key) serverPublicKey.value = rRes.data.server_public_key
     if (rRes.data?.vpn_status) vpnStatus.value = rRes.data.vpn_status
     connLogs.value = lRes.data?.data || []
-    
-    // Only fetch interfaces if router is online
-    if (!interfaces.value.length && routerData.value.is_online) {
-      fetchInterfaces()
+
+    // Muat statistik interface yang dikirim router (push). Kartu monitoring selalu
+    // tampil, jadi isi dropdown + data di sini (bukan via tab yang tidak dipakai).
+    if (routerData.value.is_online && !isMonitoring.value) {
+      loadPushStats()
     }
   } catch {
     message.error('Gagal memuat data router')
@@ -811,41 +830,52 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- VPN & Router Info -->
+    <!-- Connection & Router Info -->
     <div class="info-grid">
       <n-card class="info-card" :bordered="true" size="small">
-        <template #header><span class="info-card-title">Informasi VPN</span></template>
+        <template #header><span class="info-card-title">Informasi Koneksi</span></template>
         <n-descriptions :label-placement="isMobile ? 'top' : 'left'" :column="1" bordered size="small">
-          <n-descriptions-item label="VPN IP">
-            <n-text strong>{{ routerData.vpn_ip || 'Belum dialokasi' }}</n-text>
+          <n-descriptions-item label="Mode Koneksi">
+            <n-tag :type="usingVpn ? 'info' : 'success'" size="small">{{ usingVpn ? 'WireGuard VPN' : 'IP Publik' }}</n-tag>
           </n-descriptions-item>
-          <n-descriptions-item label="Status">
-            <n-tag :type="vpnStatus?.connected ? 'success' : 'error'" size="small">
-              {{ vpnStatus?.connected ? 'Terhubung' : 'Terputus' }}
-            </n-tag>
+          <n-descriptions-item label="RADIUS Address">
+            <n-text code>{{ (usingVpn ? routerData.vpn_ip : serverPublicIP) || '-' }}</n-text>
           </n-descriptions-item>
-          <n-descriptions-item label="VPN Public Key">
-            <n-text v-if="routerData.vpn_public_key" code style="word-break: break-all; font-size: 11px">{{ routerData.vpn_public_key }}</n-text>
-            <n-text v-else depth="3">Belum didaftarkan</n-text>
+          <n-descriptions-item label="IP Router Terdeteksi">
+            <n-text v-if="routerData.nas_ip" code>{{ routerData.nas_ip }}</n-text>
+            <n-text v-else depth="3">Menunggu heartbeat / RADIUS</n-text>
           </n-descriptions-item>
-          <n-descriptions-item label="Endpoint">
-            <n-text v-if="vpnStatus?.endpoint" code>{{ vpnStatus.endpoint }}</n-text>
-            <n-text v-else depth="3">-</n-text>
-          </n-descriptions-item>
-          <n-descriptions-item label="Handshake Terakhir">
-            {{ vpnStatus?.latest_handshake ? timeAgo(vpnStatus.latest_handshake) : '-' }}
-          </n-descriptions-item>
-          <n-descriptions-item label="Transfer">
-            <span v-if="vpnStatus?.transfer_rx != null || vpnStatus?.transfer_tx != null">
-              ↑ {{ formatBytes(vpnStatus?.transfer_tx || 0) }} / ↓ {{ formatBytes(vpnStatus?.transfer_rx || 0) }}
-            </span>
-            <n-text v-else depth="3">-</n-text>
-          </n-descriptions-item>
+
+          <!-- Baris khusus VPN — hanya saat WireGuard aktif -->
+          <template v-if="usingVpn">
+            <n-descriptions-item label="Status VPN">
+              <n-tag :type="vpnStatus?.connected ? 'success' : 'error'" size="small">
+                {{ vpnStatus?.connected ? 'Terhubung' : 'Terputus' }}
+              </n-tag>
+            </n-descriptions-item>
+            <n-descriptions-item label="Endpoint">
+              <n-text v-if="vpnStatus?.endpoint" code>{{ vpnStatus.endpoint }}</n-text>
+              <n-text v-else depth="3">-</n-text>
+            </n-descriptions-item>
+            <n-descriptions-item label="Handshake Terakhir">
+              {{ vpnStatus?.latest_handshake ? timeAgo(vpnStatus.latest_handshake) : '-' }}
+            </n-descriptions-item>
+            <n-descriptions-item label="Transfer VPN">
+              <span v-if="vpnStatus?.transfer_rx != null || vpnStatus?.transfer_tx != null">
+                ↑ {{ formatBytes(vpnStatus?.transfer_tx || 0) }} / ↓ {{ formatBytes(vpnStatus?.transfer_rx || 0) }}
+              </span>
+              <n-text v-else depth="3">-</n-text>
+            </n-descriptions-item>
+          </template>
+
           <n-descriptions-item label="RADIUS Secret">
             <n-text code style="word-break: break-all; font-size: 12px">{{ routerData.radius_secret || '-' }}</n-text>
           </n-descriptions-item>
           <n-descriptions-item label="CoA Port">
             {{ routerData.coa_port || '-' }}
+          </n-descriptions-item>
+          <n-descriptions-item label="Terakhir Terlihat">
+            {{ routerData.last_seen_at ? timeAgo(routerData.last_seen_at) : 'Belum pernah' }}
           </n-descriptions-item>
           <n-descriptions-item label="Heartbeat Token">
             <div class="token-row">
@@ -967,6 +997,12 @@ onUnmounted(() => {
       </template>
       
       <div class="bw-monitor">
+        <n-alert v-if="interfacesError" type="warning" :bordered="false" style="margin-bottom: 14px; border-radius: 10px">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap">
+            <span>{{ interfacesError }}</span>
+            <n-button size="small" :loading="loadingInterfaces" @click="fetchInterfaces">Coba Lagi</n-button>
+          </div>
+        </n-alert>
         <div class="bw-controls">
           <n-space align="center" justify="space-between" style="width: 100%">
             <n-select
@@ -1205,7 +1241,7 @@ onUnmounted(() => {
             </div>
             <div class="cfg-key-form">
               <n-input v-model:value="vpnKeyInput" :placeholder="routerData.vpn_public_key || 'Paste public key MikroTik...'" size="small" style="flex: 1" :disabled="vpnKeySubmitting" />
-              <n-button size="small" type="primary" :loading="vpnKeySubmitting" :disabled="!vpnKeyInput.trim()" @click="handleSubmitVpnKey">Daftarkan</n-button>
+              <n-button size="small" type="primary" :loading="vpnKeySubmitting" :disabled="!vpnKeyInput.trim() || !wgServerReady" @click="handleSubmitVpnKey">Daftarkan</n-button>
             </div>
             <div v-if="routerData.vpn_public_key" class="cfg-key-registered">
               <n-icon :size="14" :color="'#52c41a'"><Check /></n-icon>
@@ -1278,6 +1314,21 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <!-- Interface monitor (push, tanpa VPN) -->
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 4 : 6 }}</span>
+              <div>
+                <div class="cfg-step-title">Monitoring Bandwidth Interface <span class="cfg-opt">opsional</span></div>
+                <div class="cfg-step-desc">Router mengirim counter rx/tx tiap 5 detik (hanya interface fisik, bukan sesi PPPoE) agar grafik trafik per-interface tampil — <strong>tanpa perlu VPN</strong>.</div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ ifMonitorScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(ifMonitorScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
           <div class="cfg-tab-nav">
             <n-button size="small" tertiary @click="activeGuideTab = 'ppp'">← PPP Server</n-button>
             <n-button size="small" @click="showConfigModal = false">Selesai</n-button>
@@ -1342,7 +1393,7 @@ onUnmounted(() => {
           </div>
           <div class="cfg-key-form">
             <n-input v-model:value="vpnKeyInput" :placeholder="routerData.vpn_public_key || 'Paste public key WireGuard router...'" size="small" style="flex: 1" :disabled="vpnKeySubmitting" />
-            <n-button size="small" type="primary" :loading="vpnKeySubmitting" :disabled="!vpnKeyInput.trim()" @click="handleSubmitVpnKey">Daftarkan</n-button>
+            <n-button size="small" type="primary" :loading="vpnKeySubmitting" :disabled="!vpnKeyInput.trim() || !wgServerReady" @click="handleSubmitVpnKey">Daftarkan</n-button>
           </div>
           <div v-if="routerData.vpn_public_key" class="cfg-key-registered">
             <n-icon :size="14" :color="'#52c41a'"><Check /></n-icon>

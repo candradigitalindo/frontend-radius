@@ -27,6 +27,7 @@ const showCustomers = ref(true)
 const showLines = ref(true)
 const showOLT = ref(true)
 
+let fittedOnce = false
 let leafletMap: LeafletMap | null = null
 let odpLayer: LayerGroup | null = null
 let customerLayer: LayerGroup | null = null
@@ -41,16 +42,16 @@ const stats = computed(() => {
   return { olts, odps, customers, online }
 })
 
-async function loadData() {
-  loading.value = true
+async function loadData(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await ftthApi.getMapItems()
     items.value = res.data.data ?? []
     if (leafletMap) renderMap()
   } catch (e) {
-    console.error('Gagal memuat data peta', e)
+    if (!silent) console.error('Gagal memuat data peta', e)
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
@@ -205,12 +206,16 @@ async function renderMap() {
     }
   }
 
-  // Auto-fit bounds if there are visible points
-  const allPoints = items.value
-    .filter(i => i.latitude && i.longitude)
-    .map(i => [i.latitude!, i.longitude!] as [number, number])
-  if (allPoints.length > 0) {
-    leafletMap.fitBounds(L.latLngBounds(allPoints), { padding: [30, 30] })
+  // Auto-fit bounds only on the first render so auto-refresh doesn't reset the
+  // user's current pan/zoom.
+  if (!fittedOnce) {
+    const allPoints = items.value
+      .filter(i => i.latitude && i.longitude)
+      .map(i => [i.latitude!, i.longitude!] as [number, number])
+    if (allPoints.length > 0) {
+      leafletMap.fitBounds(L.latLngBounds(allPoints), { padding: [30, 30] })
+      fittedOnce = true
+    }
   }
 }
 
@@ -223,8 +228,18 @@ function toggleLayer(type: 'olt' | 'odp' | 'customer' | 'lines') {
   renderMap()
 }
 
-onMounted(() => initMap())
-onUnmounted(() => { leafletMap?.remove(); leafletMap = null })
+// Auto-refresh status online modem/perangkat tiap 30 detik (silent, tab terlihat).
+let pollTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  initMap()
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') loadData(true)
+  }, 30000)
+})
+onUnmounted(() => {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+  leafletMap?.remove(); leafletMap = null
+})
 </script>
 
 <template>
@@ -237,7 +252,7 @@ onUnmounted(() => { leafletMap?.remove(); leafletMap = null })
           ODP jalur & modem pelanggan secara real-time
         </div>
       </div>
-      <NButton size="small" :loading="loading" @click="loadData">Refresh</NButton>
+      <NButton size="small" :loading="loading" @click="() => loadData()">Refresh</NButton>
     </div>
 
     <!-- Stats row -->

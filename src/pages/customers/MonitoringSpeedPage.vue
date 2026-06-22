@@ -98,8 +98,8 @@ const columns = computed<DataTableColumns<any>>(() => [
   },
 ])
 
-async function fetchData() {
-  loading.value = true
+async function fetchData(silent = false) {
+  if (!silent) loading.value = true
   try {
     const res = await bandwidthApi.saturation({
       hours: hours.value,
@@ -113,16 +113,24 @@ async function fetchData() {
       message.error('Sesi Anda telah habis. Silakan login kembali.')
       authStore.logout()
       window.location.href = '/login'
-    } else {
+    } else if (!silent) {
       message.error('Gagal memuat data monitoring')
     }
-    data.value = []
+    if (!silent) data.value = []
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
 }
 
-onMounted(fetchData)
+// Auto-refresh tiap 15 detik (silent, hanya saat tab terlihat).
+let pollTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  fetchData()
+  pollTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') fetchData(true)
+  }, 15000)
+})
+onUnmounted(() => { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } })
 </script>
 
 <template>
@@ -136,7 +144,7 @@ onMounted(fetchData)
       <n-button
         type="primary"
         :loading="loading"
-        @click="fetchData"
+        @click="() => fetchData()"
         size="small"
       >
         <template #icon><n-icon><RefreshIcon /></n-icon></template>
@@ -156,7 +164,7 @@ onMounted(fetchData)
             :step="5"
             size="small"
             placeholder="80"
-            @update:value="fetchData"
+            @update:value="() => fetchData()"
           />
           <span class="filter-hint">Batas saturasi minimum</span>
         </div>
@@ -169,7 +177,7 @@ onMounted(fetchData)
             :step="1"
             size="small"
             placeholder="24"
-            @update:value="fetchData"
+            @update:value="() => fetchData()"
           />
           <span class="filter-hint">Rentang waktu analisis</span>
         </div>
@@ -182,7 +190,7 @@ onMounted(fetchData)
             :step="5"
             size="small"
             placeholder="20"
-            @update:value="fetchData"
+            @update:value="() => fetchData()"
           />
           <span class="filter-hint">Maks pelanggan ditampilkan</span>
         </div>
