@@ -451,7 +451,14 @@ async function resetPassword() {
 
 .nf-card {
   text-align: center;
-  max-width: 360px;
+  max-width: 380px;
+  padding: 36px 30px;
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--glass-radius-lg);
+  box-shadow: var(--glass-shadow-lg), inset 0 1px 0 var(--glass-highlight);
 }
 
 .nf-card h2 {
@@ -672,15 +679,17 @@ async function resetPassword() {
   align-items: center;
   gap: 14px;
   padding: 14px 16px;
-  border-radius: 14px;
-  background: rgba(0, 229, 255, 0.03);
-  border: 1px solid rgba(0, 229, 255, 0.06);
+  border-radius: var(--glass-radius-sm);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   transition: all 0.3s ease;
 }
 
 .feature-card:hover {
-  background: rgba(0, 229, 255, 0.06);
-  border-color: rgba(0, 229, 255, 0.12);
+  border-color: var(--glass-border-strong);
   transform: translateX(4px);
 }
 
@@ -745,10 +754,17 @@ async function resetPassword() {
 
 .form-card {
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
+  padding: 30px 28px;
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border-strong);
+  border-radius: var(--glass-radius-lg);
+  box-shadow: var(--glass-shadow-lg), inset 0 1px 0 var(--glass-highlight);
 }
 
 .mobile-brand {

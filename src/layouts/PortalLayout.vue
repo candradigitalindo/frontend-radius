@@ -104,9 +104,12 @@ function handleLogout() {
 
 <template>
   <div class="portal-shell">
+    <!-- ===== Ambient aurora background ===== -->
+    <div class="portal-aurora"><div class="aurora-blob"></div></div>
+
     <!-- ===== Top Navbar ===== -->
     <header class="portal-topbar">
-      <div class="topbar-inner">
+      <div class="topbar-inner glass-card">
         <div class="topbar-left">
           <div class="brand" @click="navigate('/portal')">
             <div class="brand-icon">
@@ -163,7 +166,7 @@ function handleLogout() {
     <!-- ===== Mobile slide menu ===== -->
     <Transition name="slide-menu">
       <div v-if="isMobile && showMobileMenu" class="mobile-menu-overlay" @click.self="showMobileMenu = false">
-        <div class="mobile-menu">
+        <div class="mobile-menu glass-card glass-strong">
           <div class="mobile-menu-user">
             <n-avatar round :size="48" class="user-avatar">
               {{ authStore.user?.name?.charAt(0) || 'U' }}
@@ -199,7 +202,7 @@ function handleLogout() {
     </main>
 
     <!-- ===== Mobile bottom tab bar ===== -->
-    <nav v-if="isMobile" class="bottom-tab-bar">
+    <nav v-if="isMobile" class="bottom-tab-bar glass-card glass-strong">
       <button
         v-for="item in navItems" :key="item.key"
         class="tab-btn" :class="{ active: activeKey === item.key }"
@@ -216,30 +219,34 @@ function handleLogout() {
 /* ===== Shell ===== */
 .portal-shell {
   min-height: 100vh;
-  background: var(--app-bg);
+  min-height: 100dvh; /* avoid phantom scroll from mobile browser toolbar */
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 0;
 }
 
-/* ===== Top Bar ===== */
+/* ===== Top Bar — floating glass ===== */
 .portal-topbar {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: var(--app-header-bg);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--app-header-border);
+  padding: 12px 16px 0;
 }
 
 .topbar-inner {
-  max-width: 1200px;
+  max-width: 1180px;
   margin: 0 auto;
   height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
+  padding: 0 18px;
   gap: 16px;
+  border-radius: var(--glass-radius);
+  /* promote to its own layer so backdrop-filter paints reliably on mobile */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
 .topbar-left {
@@ -365,39 +372,44 @@ function handleLogout() {
 /* ===== Main Content ===== */
 .portal-main {
   flex: 1;
-  padding: 24px;
+  padding: 20px 16px;
+  position: relative;
+  z-index: 1;
+  /* base text colour so portal pages that don't set an explicit colour don't
+     fall back to the UA default (black), which is invisible in dark mode */
+  color: var(--app-text-primary);
 }
 
 .portal-main.has-bottom-nav {
-  padding-bottom: 80px;
+  padding-bottom: 96px;
 }
 
 .portal-content-inner {
-  max-width: 1200px;
+  max-width: 1180px;
   margin: 0 auto;
 }
 
 /* ===== Mobile Menu ===== */
 .mobile-menu-overlay {
   position: fixed;
-  inset: 60px 0 0 0;
-  z-index: 99;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  inset: 0;
+  z-index: 101;
+  background: rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
 
 .mobile-menu {
   position: absolute;
-  right: 0;
-  top: 0;
+  right: 12px;
+  top: 12px;
+  bottom: 12px;
   width: 280px;
-  height: 100%;
-  background: var(--app-header-bg);
-  backdrop-filter: blur(20px);
-  border-left: 1px solid var(--app-header-border);
+  height: auto;
   display: flex;
   flex-direction: column;
   padding: 16px;
+  border-radius: var(--glass-radius-lg);
 }
 
 .mobile-menu-user {
@@ -460,53 +472,59 @@ function handleLogout() {
   border-radius: 0 0 10px 10px;
 }
 
-/* ===== Bottom Tab Bar (Mobile) ===== */
+/* ===== Bottom Tab Bar (Mobile) — floating glass pill ===== */
 .bottom-tab-bar {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  left: 12px;
+  right: 12px;
   z-index: 100;
   height: 64px;
   display: flex;
   align-items: center;
   justify-content: space-around;
-  background: var(--app-header-bg);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid var(--app-header-border);
-  padding: 0 8px;
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding: 0 6px;
+  border-radius: 22px;
+  /* promote to its own compositing layer so the fixed glass bar paints on
+     initial load / refresh (WebKit drops backdrop-filter on fixed els otherwise) */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .tab-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 6px 12px;
+  padding: 8px 6px;
   border: none;
-  border-radius: 10px;
+  border-radius: 14px;
   background: transparent;
   color: var(--app-text-muted);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 10.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
-  min-width: 56px;
+  transition: color 0.2s, background 0.2s, transform 0.15s;
+  min-width: 52px;
 }
+
+.tab-btn:active { transform: scale(0.92); }
 
 .tab-btn.active {
   color: var(--app-accent);
+  background: var(--app-accent-soft);
 }
 
-.tab-btn.active::after {
+.tab-btn.active::before {
   content: '';
   position: absolute;
-  top: 0;
-  width: 24px;
-  height: 2px;
-  border-radius: 0 0 2px 2px;
-  background: var(--app-accent);
+  top: 3px;
+  width: 22px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--glass-accent-grad);
 }
 
 /* ===== Transitions ===== */

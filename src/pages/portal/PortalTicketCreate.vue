@@ -125,8 +125,11 @@ async function handleSubmit() {
 }
 
 .form-card {
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   border-radius: 16px;
   padding: 28px 24px;
   display: flex;

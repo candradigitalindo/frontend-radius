@@ -354,12 +354,12 @@ onMounted(() => fetchDevice())
   justify-content: space-between;
   gap: 14px;
   padding: 18px 20px;
-  border-radius: 16px;
-  border: 1px solid var(--app-border, rgba(0,0,0,.06));
-}
-
-:root.dark .device-header {
-  border-color: rgba(255,255,255,.06);
+  border-radius: var(--glass-radius);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border-strong);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
 }
 
 .device-header-left {
@@ -457,15 +457,15 @@ onMounted(() => fetchDevice())
 
 .info-card {
   padding: 18px;
-  border-radius: 14px;
-  border: 1px solid var(--app-border, rgba(0,0,0,.06));
+  border-radius: var(--glass-radius);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-:root.dark .info-card {
-  border-color: rgba(255,255,255,.06);
 }
 
 .info-card-header {

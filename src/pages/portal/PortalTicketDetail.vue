@@ -194,8 +194,11 @@ onMounted(fetchData)
 
 /* Header */
 .header-card {
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   border-radius: 16px;
   padding: 20px;
   display: flex;
@@ -304,8 +307,11 @@ onMounted(fetchData)
 
 .msg-bubble {
   max-width: 70%;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   border-radius: 14px;
   padding: 10px 14px;
   display: flex;
@@ -410,8 +416,11 @@ onMounted(fetchData)
   gap: 8px;
   padding: 14px;
   border-radius: 12px;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   font-size: 13px;
   color: var(--app-text-muted);
 }

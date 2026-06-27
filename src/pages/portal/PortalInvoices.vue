@@ -301,16 +301,19 @@ async function quickPay(e: Event, inv: any) {
   justify-content: space-between;
   gap: 12px;
   padding: 16px;
-  border-radius: 14px;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  border-radius: var(--glass-radius-sm);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: transform 0.2s cubic-bezier(0.22,1,0.36,1), border-color 0.2s;
 }
 
 .inv-card:hover {
-  border-color: var(--app-accent);
-  transform: translateX(2px);
+  border-color: var(--glass-border-strong);
+  transform: translateY(-2px);
 }
 
 .inv-card-left {

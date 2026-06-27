@@ -263,8 +263,11 @@ async function submitPayment() {
 .header-card {
   border-radius: 16px;
   padding: 24px;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -338,8 +341,11 @@ async function submitPayment() {
 /* Detail card */
 .detail-card {
   border-radius: 14px;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   overflow: hidden;
 }
 
@@ -397,8 +403,11 @@ async function submitPayment() {
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
 }
 
 .pay-icon {

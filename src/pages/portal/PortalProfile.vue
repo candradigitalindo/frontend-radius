@@ -252,8 +252,11 @@ async function handleChangePassword() {
 
 /* Profile card */
 .profile-card {
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   border-radius: 16px;
   padding: 24px;
   display: flex;
@@ -293,8 +296,11 @@ async function handleChangePassword() {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: var(--app-bg-secondary, rgba(255,255,255,0.03));
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
 }
 
 .info-icon {
@@ -335,8 +341,11 @@ async function handleChangePassword() {
 
 /* Password */
 .password-card {
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   border-radius: 16px;
   padding: 24px;
   display: flex;

@@ -181,8 +181,11 @@ function timeAgo(d: string) {
 .ticket-card {
   padding: 16px 18px;
   border-radius: 14px;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;

@@ -44,6 +44,7 @@ function formatCurrency(n: number) {
 }
 
 function getChangeType(pkg: any) {
+  if (!pkg) return 'same'
   const currentPrice = currentPackage.value.price || 0
   if (pkg.price > currentPrice) return 'upgrade'
   if (pkg.price < currentPrice) return 'downgrade'
@@ -373,22 +374,18 @@ async function submitChange() {
 .pkg-card {
   position: relative;
   padding: 20px 16px;
-  border-radius: 16px;
-  border: 2px solid transparent;
+  border-radius: var(--glass-radius);
+  border: 2px solid var(--glass-border);
   cursor: pointer;
-  transition: all .2s;
+  transition: transform .2s, border-color .2s;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--app-card-bg, transparent);
-}
-
-:root:not(.dark) .pkg-card {
-  border-color: rgba(0,0,0,.08);
-}
-
-:root.dark .pkg-card {
-  border-color: rgba(255,255,255,.08);
+  color: var(--app-text-primary);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
 }
 
 .pkg-card:hover:not(.is-current) {
@@ -398,7 +395,6 @@ async function submitChange() {
 
 .pkg-card.is-current {
   border-color: #22c55e;
-  background: rgba(34,197,94,.04);
   cursor: default;
 }
 
@@ -526,8 +522,11 @@ async function submitChange() {
   gap: 12px;
   padding: 16px;
   border-radius: 12px;
-  background: var(--app-accent-soft);
-  border: 1px solid var(--app-card-border);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
 }
 
 .comp-side {

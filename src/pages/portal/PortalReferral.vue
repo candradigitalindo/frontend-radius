@@ -500,17 +500,12 @@ function shareCode() {
   gap: 12px;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid var(--app-border, rgba(0,0,0,.05));
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
   transition: all .2s;
-}
-
-:root:not(.dark) .referral-item {
-  background: rgba(0,0,0,.01);
-}
-
-:root.dark .referral-item {
-  background: rgba(255,255,255,.02);
-  border-color: rgba(255,255,255,.05);
 }
 
 .ref-avatar {
@@ -576,16 +571,11 @@ function shareCode() {
   gap: 12px;
   padding: 12px 16px;
   border-radius: 12px;
-  border: 1px solid var(--app-border, rgba(0,0,0,.05));
-}
-
-:root:not(.dark) .claim-item {
-  background: rgba(0,0,0,.01);
-}
-
-:root.dark .claim-item {
-  background: rgba(255,255,255,.02);
-  border-color: rgba(255,255,255,.05);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 
 .claim-icon {
