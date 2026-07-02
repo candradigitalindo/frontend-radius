@@ -266,7 +266,7 @@ router.beforeEach(async (to, _from, next) => {
     }
 
     // Permission-based route guard for staff
-    const publicStaffRoutes = ['dashboard', 'profile', 'settings', 'subscription', 'select-plan']
+    const publicStaffRoutes = ['dashboard', 'profile', 'settings', 'subscription', 'select-plan', 'help']
     if (isStaffRoute && isStaffRole && to.name && !publicStaffRoutes.includes(to.name as string)) {
       const { usePermission } = await import('../composables/usePermission')
       const { canAccessRoute } = usePermission()

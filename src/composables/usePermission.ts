@@ -22,7 +22,8 @@ export function usePermission() {
   const menuSet = computed<Set<string>>(() => {
     if (isSuperAdmin.value) return new Set(saMenus)
     if (isCustomer.value) return new Set(customerMenus)
-    const s = new Set<string>()
+    // 'help' (Panduan Penggunaan) is available to every staff member
+    const s = new Set<string>(['help'])
     for (const p of permissions.value) {
       const menus = permMenuMap[p]
       if (menus) menus.forEach(m => s.add(m))

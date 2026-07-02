@@ -96,10 +96,6 @@ function onUserAction(key: string) {
     router.push('/portal/profile')
   }
 }
-
-function handleLogout() {
-  portalLogoutRedirect()
-}
 </script>
 
 <template>
@@ -186,7 +182,7 @@ function handleLogout() {
               <span>{{ item.label }}</span>
             </button>
           </div>
-          <button class="mobile-nav-btn logout-btn" @click="handleLogout">
+          <button class="mobile-nav-btn logout-btn" @click="portalLogoutRedirect">
             <n-icon :component="LogoutIcon" :size="20" />
             <span>Keluar</span>
           </button>

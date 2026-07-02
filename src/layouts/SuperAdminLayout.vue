@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NIcon, NAvatar, NDropdown, NSwitch, NSpace, NText, NTag } from 'naive-ui'
 import type { MenuOption } from 'naive-ui'
@@ -16,6 +16,7 @@ import {
 } from '@vicons/ionicons5'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
+import { ri } from '../config/menuItems'
 
 const router = useRouter()
 const route = useRoute()
@@ -43,8 +44,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
 })
-
-const ri = (icon: any) => () => h(NIcon, null, { default: () => h(icon) })
 
 const menuOptions: MenuOption[] = [
   { label: 'Dashboard', key: 'sa-dashboard', icon: ri(DashboardIcon) },
@@ -75,7 +74,6 @@ function onMenuSelect(key: string) {
 }
 
 const userDropdownOptions = [
-  { type: 'divider', key: 'd' },
   { label: 'Logout', key: 'logout' },
 ]
 

@@ -69,7 +69,7 @@ const activeKey = computed(() => {
   if (name?.startsWith('reseller')) return 'resellers'
   if (name?.startsWith('olt')) return 'olts'
   if (name?.startsWith('odp')) return 'odps'
-  if (name?.startsWith('ont')) return 'onts'
+  if (name?.startsWith('ont')) return 'customers' // ONT pages live under Pelanggan
   return name || 'dashboard'
 })
 
