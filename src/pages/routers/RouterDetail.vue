@@ -139,8 +139,10 @@ set accept=yes port=${coaPort.value}`
 })
 
 const pppoeBlock2 = computed(() => {
+  // interim-update wajib: server menandai sesi putus (NAS-Timeout) bila tidak ada
+  // accounting update >10 menit, jadi router harus lapor tiap 5 menit.
   return `/ppp aaa
-set use-radius=yes`
+set use-radius=yes accounting=yes interim-update=5m`
 })
 
 const heartbeatScript = computed(() => {
@@ -251,6 +253,8 @@ aaa group server radius DRADIUS-GRP
 aaa authentication ppp default group DRADIUS-GRP local
 aaa authorization network default group DRADIUS-GRP
 aaa accounting network default start-stop group DRADIUS-GRP
+! Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
+aaa accounting update newinfo periodic 5
 ! CoA (disconnect / change of authorization)
 aaa server radius dynamic-author
  client ${ip} server-key ${sec}
@@ -262,6 +266,8 @@ radius-server host ${ip} auth-port ${authPort.value} acct-port ${acctPort.value}
 aaa authentication ppp default group radius local
 aaa authorization network default group radius
 aaa accounting network default start-stop group radius
+! Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
+aaa accounting update newinfo periodic 5
 ! CoA
 aaa server radius dynamic-author
  client ${ip} server-key ${sec}
@@ -280,6 +286,7 @@ aaa
   authentication-mode radius
  accounting-scheme dradius
   accounting-mode radius
+  accounting interim interval 5
  domain dradius
   authentication-scheme dradius
   accounting-scheme dradius
@@ -293,13 +300,17 @@ set access radius-server ${ip} dynamic-request-port ${coa}
 set access profile dradius authentication-order radius
 set access profile dradius radius authentication-server ${ip}
 set access profile dradius radius accounting-server ${ip}
-set access profile dradius accounting order radius`
+set access profile dradius accounting order radius
+# Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
+set access profile dradius accounting update-interval 5`
     case 'vyos':
       return `# ===== RADIUS untuk PPPoE Server (D Radius) =====
 set service pppoe-server authentication mode radius
 set service pppoe-server authentication radius server ${ip} key '${sec}'
 set service pppoe-server authentication radius server ${ip} auth-port ${authPort.value}
 set service pppoe-server authentication radius server ${ip} acct-port ${acctPort.value}
+# Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
+set service pppoe-server authentication radius acct-interim-interval 300
 # CoA (dynamic authorization)
 set service pppoe-server authentication radius dynamic-author server '${ip}'
 set service pppoe-server authentication radius dynamic-author key '${sec}'
@@ -1187,7 +1198,7 @@ onUnmounted(() => {
           <!-- Banner per mode -->
           <div v-if="connectionMode === 'direct'" class="cfg-banner cfg-banner--ok">
             <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
-            <span>Buka port <strong>{{ mikrotikConfig?.radius_auth_port }}/{{ mikrotikConfig?.radius_acct_port }}</strong> (UDP) &amp; <strong>{{ coaPort }}</strong> (TCP) di firewall server.</span>
+            <span>Pastikan router bisa akses internet ke UDP <strong>{{ mikrotikConfig?.radius_auth_port }}/{{ mikrotikConfig?.radius_acct_port }}</strong> server. Agar isolir/putus sesi (CoA) berfungsi, izinkan UDP <strong>{{ coaPort }}</strong> masuk dari IP <strong>{{ effectiveServerPublicIP }}</strong> di firewall router (port-forward bila router di belakang NAT).</span>
           </div>
           <div v-else-if="!serverPublicKey" class="cfg-banner cfg-banner--warn">
             <n-icon class="cfg-banner-svg" :size="18"><AlertTriangle /></n-icon>
@@ -1218,10 +1229,35 @@ onUnmounted(() => {
             </div>
           </div>
 
+          <div v-if="connectionMode === 'wireguard'" class="cfg-step-note">
+            <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
+            <div>WireGuard butuh <strong>RouterOS 7.1+</strong>. Jika router Anda masih ROS 6, gunakan mode <strong>IP Publik</strong>.</div>
+          </div>
+
+          <!-- Heartbeat — WAJIB, dan harus PERTAMA: di mode IP Publik server baru
+               mengenali IP router (dan mau menerima RADIUS) setelah heartbeat masuk -->
+          <div class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">1</span>
+              <div>
+                <div class="cfg-step-title">Aktifkan Heartbeat <span class="cfg-req">wajib</span></div>
+                <div class="cfg-step-desc">
+                  Jalankan ini <strong>lebih dulu</strong>. Selain mengirim status CPU/RAM/uptime tiap <code>{{ heartbeatInterval }}</code> dan membuat router tampil <strong>Online</strong>,
+                  <template v-if="connectionMode === 'direct'">di mode IP Publik heartbeat-lah yang memberi tahu server alamat IP router Anda — <strong>sebelum heartbeat pertama diterima, autentikasi RADIUS ditolak</strong>.</template>
+                  <template v-else>heartbeat juga mencatat alamat WAN router di server.</template>
+                </div>
+              </div>
+            </div>
+            <div class="cfg-code">
+              <pre>{{ heartbeatScript }}</pre>
+              <button class="cfg-copy-btn" @click="copyToClipboard(heartbeatScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+            </div>
+          </div>
+
           <!-- WireGuard Step 1: Interface -->
           <div v-if="connectionMode === 'wireguard'" class="cfg-step">
             <div class="cfg-step-header">
-              <span class="cfg-step-num">1</span>
+              <span class="cfg-step-num">2</span>
               <div>
                 <div class="cfg-step-title">Buat Interface WireGuard</div>
                 <div class="cfg-step-desc">Interface <code>wg0</code> port {{ wgRouterPort }} + IP VPN di jaringan {{ vpnSubnet }}.</div>
@@ -1253,7 +1289,7 @@ onUnmounted(() => {
           <!-- WireGuard Step 2: Peer -->
           <div v-if="connectionMode === 'wireguard'" class="cfg-step">
             <div class="cfg-step-header">
-              <span class="cfg-step-num">2</span>
+              <span class="cfg-step-num">3</span>
               <div>
                 <div class="cfg-step-title">Tambah Peer Server</div>
                 <div class="cfg-step-desc">Endpoint <code>{{ effectiveServerPublicIP }}:{{ vpnListenPort }}</code>, allowed <code>{{ vpnSubnet }}</code>.</div>
@@ -1268,7 +1304,7 @@ onUnmounted(() => {
           <!-- RADIUS Client -->
           <div class="cfg-step">
             <div class="cfg-step-header">
-              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 1 : 3 }}</span>
+              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 2 : 4 }}</span>
               <div>
                 <div class="cfg-step-title">Daftarkan Client RADIUS</div>
                 <div class="cfg-step-desc">Arahkan ke <code>{{ effectiveRadiusAddress }}</code> &amp; aktifkan Incoming (CoA).</div>
@@ -1287,30 +1323,15 @@ onUnmounted(() => {
           <!-- Aktifkan use-radius -->
           <div class="cfg-step">
             <div class="cfg-step-header">
-              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 2 : 4 }}</span>
+              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 3 : 5 }}</span>
               <div>
                 <div class="cfg-step-title">Aktifkan Use RADIUS di PPP</div>
-                <div class="cfg-step-desc">Sesi PPPoE pelanggan kini diautentikasi oleh server RADIUS.</div>
+                <div class="cfg-step-desc">Sesi PPPoE pelanggan diautentikasi server RADIUS. <strong>interim-update=5m wajib</strong> — tanpa itu server menganggap sesi putus setelah 10 menit dan status online pelanggan jadi tidak akurat.</div>
               </div>
             </div>
             <div class="cfg-code">
               <pre>{{ pppoeBlock2 }}</pre>
               <button class="cfg-copy-btn" @click="copyToClipboard(pppoeBlock2)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
-            </div>
-          </div>
-
-          <!-- Heartbeat -->
-          <div class="cfg-step">
-            <div class="cfg-step-header">
-              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 3 : 5 }}</span>
-              <div>
-                <div class="cfg-step-title">Monitoring Heartbeat <span class="cfg-opt">opsional</span></div>
-                <div class="cfg-step-desc">Kirim status CPU, RAM, uptime ke dashboard tiap <code>{{ heartbeatInterval }}</code>.</div>
-              </div>
-            </div>
-            <div class="cfg-code">
-              <pre>{{ heartbeatScript }}</pre>
-              <button class="cfg-copy-btn" @click="copyToClipboard(heartbeatScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
             </div>
           </div>
 
@@ -1811,6 +1832,19 @@ onUnmounted(() => {
   letter-spacing: 0.4px;
   color: #888;
   background: rgba(128, 128, 128, 0.12);
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.cfg-req {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: #d03050;
+  background: rgba(208, 48, 80, 0.12);
   padding: 1px 6px;
   border-radius: 10px;
   margin-left: 6px;

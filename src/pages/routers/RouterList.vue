@@ -267,7 +267,7 @@ onMounted(fetchData)
           <template #icon>
             <n-icon :component="Plus" :size="16" />
           </template>
-          <span class="btn-text">Daftarkan VPN</span>
+          <span class="btn-text">Daftarkan Router</span>
         </n-button>
       </div>
     </div>

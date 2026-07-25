@@ -63,8 +63,9 @@ const sections: Section[] = [
         steps: [
           'Buka Jaringan → Router → Daftarkan Router.',
           'Isi nama dan pilih jenis router (kartu pemilih bisa dicari).',
-          'Buka detail router → tombol Konfigurasi → ikuti panduan yang menyesuaikan merek (IP Publik / WireGuard).',
-          'Salin skrip ke router. Pastikan status menjadi Online.',
+          'Buka detail router → tombol Konfigurasi → ikuti panduan yang menyesuaikan merek. Mode WireGuard hanya untuk MikroTik & VyOS/EdgeRouter; merek lain memakai IP Publik.',
+          'Salin skrip ke router — termasuk blok interim accounting (wajib, agar status online pelanggan akurat).',
+          'Pastikan status menjadi Online. MikroTik dipantau via heartbeat; merek lain via SNMP (skrip SNMP ada di panduan).',
         ],
         tip: 'RADIUS Secret, CoA Port, dan Heartbeat Token di-generate otomatis — tidak perlu diisi manual.',
       },
@@ -117,7 +118,7 @@ const sections: Section[] = [
         steps: [
           'Buka Jaringan → Konsumsi Data / Monitoring.',
           'Pilih router & interface untuk melihat grafik real-time.',
-          'Limit kecepatan paket dikirim otomatis oleh RADIUS sesuai merek router.',
+          'Limit kecepatan otomatis penuh di MikroTik & Huawei (VyOS perlu aktifkan shaper accel-ppp). Untuk Cisco/Ruijie buat policy-map shaping per paket, Juniper buat CoS/filter per paket — nama sama dengan nama paket (spasi → underscore).',
         ],
       },
     ],
