@@ -5,12 +5,14 @@ import { NLayout, NLayoutSider, NLayoutHeader, NLayoutContent, NMenu, NIcon, NAv
 import {
   MoonOutline as MoonIcon,
   SunnyOutline as SunIcon,
+  LogOutOutline,
 } from '@vicons/ionicons5'
 import { Menu2 } from '@vicons/tabler'
 import { useAuthStore } from '../stores/auth'
 import { useThemeStore } from '../stores/theme'
 import { usePermission } from '../composables/usePermission'
 import { allMenuItems, buildChildToGroup } from '../config/menuItems'
+import { clearImpersonationStash, getImpersonationStash } from '../api/impersonation'
 
 const router = useRouter()
 const route = useRoute()
@@ -21,6 +23,17 @@ const collapsed = ref(false)
 const isMobile = ref(false)
 const showMobileSidebar = ref(false)
 const siderCollapsed = computed(() => isMobile.value ? false : collapsed.value)
+
+const impersonation = ref(getImpersonationStash())
+
+function exitImpersonation() {
+  const stash = impersonation.value
+  if (!stash) return
+  authStore.setAuth({ user: stash.user, token: { access_token: stash.accessToken, refresh_token: stash.refreshToken } })
+  clearImpersonationStash()
+  impersonation.value = null
+  router.push(`/superadmin/tenants/${stash.targetTenantId}`)
+}
 
 const MOBILE_BREAKPOINT = 768
 
@@ -121,7 +134,17 @@ const roleColors: Record<string, string> = {
 </script>
 
 <template>
-  <n-layout has-sider style="height: 100vh">
+  <div class="app-root">
+    <div v-if="impersonation" class="impersonation-banner">
+      <span class="impersonation-text">
+        Mode Superadmin — menampilkan aplikasi sebagai <strong>{{ impersonation.targetTenantName }}</strong>
+      </span>
+      <n-button size="tiny" ghost color="#fff" @click="exitImpersonation">
+        <template #icon><n-icon :component="LogOutOutline" /></template>
+        Kembali ke Superadmin
+      </n-button>
+    </div>
+  <n-layout has-sider class="app-layout-body">
     <!-- Mobile overlay backdrop -->
     <Transition name="fade-overlay">
       <div v-if="isMobile && showMobileSidebar" class="mobile-overlay" @click="showMobileSidebar = false"></div>
@@ -230,9 +253,50 @@ const roleColors: Record<string, string> = {
       </n-layout-content>
     </n-layout>
   </n-layout>
+  </div>
 </template>
 
 <style scoped>
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.app-layout-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.impersonation-banner {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: linear-gradient(90deg, #ff1744 0%, #c0002d 100%);
+  color: #fff;
+  font-size: 12.5px;
+  z-index: 1001;
+}
+
+.impersonation-text { opacity: 0.95; }
+
+.impersonation-banner :deep(.n-button) {
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.5) !important;
+}
+
+@media (max-width: 640px) {
+  .impersonation-banner {
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+    text-align: center;
+  }
+}
+
 .app-sider {
   background: var(--app-sidebar-bg) !important;
   border-right: 1px solid var(--app-sidebar-border) !important;

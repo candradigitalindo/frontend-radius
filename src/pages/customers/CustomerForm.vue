@@ -318,6 +318,25 @@ async function handleSubmit() {
       return
     }
     const { billing_date_ts, join_date_ts, custom_price, customer_code, pppoe_username, pppoe_password, referral_code_used, ...rest } = form.value
+
+    // Kredensial PPPoE manual hanya saat create; kosong = digenerate backend
+    const manualUsername = pppoe_username.trim()
+    const manualPassword = pppoe_password.trim()
+    if (!isEdit.value && rest.connection_type === 'pppoe') {
+      if (manualUsername && !/^[A-Za-z0-9@._-]{3,50}$/.test(manualUsername)) {
+        message.warning('Username PPPoE: 3-50 karakter huruf, angka, atau @ . _ - tanpa spasi')
+        currentStep.value = 3
+        saving.value = false
+        return
+      }
+      if (manualPassword && (manualPassword.length < 4 || manualPassword.length > 50 || /\s/.test(manualPassword))) {
+        message.warning('Password PPPoE: 4-50 karakter tanpa spasi')
+        currentStep.value = 3
+        saving.value = false
+        return
+      }
+    }
+
     const payload: Record<string, any> = {
       ...rest,
       join_date: join_date_ts ? formatLocalDate(join_date_ts) : formatLocalDate(Date.now()),
@@ -357,6 +376,10 @@ async function handleSubmit() {
       }
       // Hanya sertakan referral_code_used saat buat customer baru
       if (referral_code_used?.trim()) payload.referral_code_used = referral_code_used.trim()
+      if (rest.connection_type === 'pppoe') {
+        if (manualUsername) payload.pppoe_username = manualUsername
+        if (manualPassword) payload.pppoe_password = manualPassword
+      }
       await customerApi.create(payload)
       message.success('Pelanggan berhasil ditambahkan')
     }
@@ -614,11 +637,24 @@ async function handleSubmit() {
 
         <template v-if="form.connection_type === 'pppoe'">
           <n-form-item label="PPPoE Username">
-            <n-input v-model:value="form.pppoe_username" disabled placeholder="Otomatis" />
+            <n-input
+              v-model:value="form.pppoe_username"
+              :disabled="isEdit"
+              :placeholder="isEdit ? 'Otomatis' : 'Kosongkan untuk generate otomatis'"
+              :maxlength="50"
+            />
           </n-form-item>
           <n-form-item label="PPPoE Password">
-            <n-input v-model:value="form.pppoe_password" disabled placeholder="Otomatis" />
+            <n-input
+              v-model:value="form.pppoe_password"
+              :disabled="isEdit"
+              :placeholder="isEdit ? 'Otomatis' : 'Kosongkan untuk generate otomatis'"
+              :maxlength="50"
+            />
           </n-form-item>
+          <n-alert v-if="!isEdit" type="info" :bordered="false" style="margin-bottom: 16px; font-size: 12px">
+            Username &amp; password PPPoE boleh diisi manual. Jika dikosongkan, sistem akan membuatnya otomatis.
+          </n-alert>
         </template>
 
         <n-form-item v-if="form.connection_type === 'static'" label="IP Address">

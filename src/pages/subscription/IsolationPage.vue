@@ -7,6 +7,7 @@ import {
 import { subscriptionApi, tenantApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
 import { useThemeStore } from '../../stores/theme'
+import BankTransferModal from '../../components/BankTransferModal.vue'
 
 const message = useMessage()
 const authStore = useAuthStore()
@@ -18,6 +19,8 @@ const plans = ref<any[]>([])
 const tenantDetail = ref<any>({})
 const selectedPlanId = ref('')
 const duration = ref<1 | 12>(1)
+const showBankTransferModal = ref(false)
+const bankTransferInfo = ref<any>(null)
 
 const expiredData = computed(() => {
   try {
@@ -96,7 +99,11 @@ async function handlePay() {
     const snapToken: string | undefined = payData.data?.snap_token
     const payURL: string | undefined = payData.data?.payment_url
 
-    if (snapToken) {
+    if (payData.data?.bank_account_number) {
+      bankTransferInfo.value = payData.data
+      showBankTransferModal.value = true
+      paying.value = false
+    } else if (snapToken) {
       const sandbox = payURL?.includes('sandbox') ?? false
       await loadSnapScript(sandbox)
       ;(window as any).snap.pay(snapToken, {
@@ -276,15 +283,17 @@ onMounted(async () => {
               @click="handlePay"
               style="width:100%;background:#ff1744;border-color:#ff1744;border-radius:10px;font-size:15px;height:48px"
             >
-              Bayar Sekarang via Midtrans
+              Bayar Sekarang
             </n-button>
             <div class="iso-pay-note">
-              Pembayaran aman diproses melalui Midtrans Payment Gateway
+              Transfer bank dengan kode unik untuk verifikasi otomatis lebih cepat
             </div>
           </div>
         </n-spin>
       </div>
     </div>
+
+    <BankTransferModal v-model:show="showBankTransferModal" :info="bankTransferInfo" />
   </div>
 </template>
 

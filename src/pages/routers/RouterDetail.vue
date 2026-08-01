@@ -67,8 +67,10 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null
 // Router dianggap memakai VPN hanya jika public key WireGuard sudah terdaftar.
 const usingVpn = computed(() => !!routerData.value.vpn_public_key)
 
-// Mode koneksi: 'direct' = IP Publik (ROS 6 & 7), 'wireguard' = VPN WireGuard (ROS 7+)
-const connectionMode = ref<'direct' | 'wireguard'>('direct')
+// Mode koneksi: 'direct' = IP Publik (butuh IP publik di WAN router),
+// 'wireguard' = VPN WireGuard (ROS 7+),
+// 'legacy' = VPN L2TP/SSTP (ROS 6 & 7, jalan di belakang NAT tanpa upgrade).
+const connectionMode = ref<'direct' | 'wireguard' | 'legacy'>('direct')
 
 const isMobile = ref(window.innerWidth < 640)
 const isTablet = ref(window.innerWidth < 1024)
@@ -87,12 +89,50 @@ const effectiveServerPublicIP = computed(() => cfg.value.server_endpoint || serv
 
 const effectiveServerPublicKey = computed(() => cfg.value.server_public_key || serverPublicKey.value || '')
 
-// Di mode direct, RADIUS mengarah ke IP publik server; di mode wireguard ke VPN IP server.
-const effectiveRadiusAddress = computed(() =>
-  connectionMode.value === 'direct'
-    ? effectiveServerPublicIP.value
-    : (cfg.value.server_vpn_ip || '')
-)
+// Di mode direct RADIUS mengarah ke IP publik server; di mode wireguard ke VPN
+// IP server; di mode legacy (L2TP/SSTP) ke gateway tunnel legacy.
+const effectiveRadiusAddress = computed(() => {
+  if (connectionMode.value === 'direct') return effectiveServerPublicIP.value
+  if (connectionMode.value === 'legacy') return legacyVpnGw.value
+  return cfg.value.server_vpn_ip || ''
+})
+
+// ── VPN Legacy (L2TP/SSTP via accel-ppp) — ROS 6 / router di belakang NAT ────
+const legacyVpnAvailable = computed(() => !!cfg.value.legacy_vpn_available)
+const legacyVpnGw = computed(() => cfg.value.legacy_vpn_gw || '')
+const legacyVpnUsername = computed(() => cfg.value.legacy_vpn_username || '')
+const legacyVpnPassword = computed(() => cfg.value.legacy_vpn_password || '')
+const legacyVpnIP = computed(() => cfg.value.legacy_vpn_ip || '')
+const legacyL2tpPort = computed(() => cfg.value.legacy_l2tp_port || '1701')
+const legacySstpPort = computed(() => cfg.value.legacy_sstp_port || '5443')
+const legacyProvisioned = computed(() => !!legacyVpnUsername.value && !!legacyVpnIP.value)
+
+const legacyL2tpScript = computed(() => {
+  return `/interface l2tp-client add name=vpn-dradius \\
+    connect-to=${effectiveServerPublicIP.value} \\
+    user="${legacyVpnUsername.value}" password="${legacyVpnPassword.value}" \\
+    add-default-route=no disabled=no`
+})
+
+const legacySstpScript = computed(() => {
+  return `/interface sstp-client add name=vpn-dradius \\
+    connect-to=${effectiveServerPublicIP.value}:${legacySstpPort.value} \\
+    user="${legacyVpnUsername.value}" password="${legacyVpnPassword.value}" \\
+    verify-server-certificate=no add-default-route=no disabled=no`
+})
+
+const legacyVpnSubmitting = ref(false)
+async function handleEnableLegacyVpn() {
+  legacyVpnSubmitting.value = true
+  try {
+    await routerApi.enableLegacyVpn(id)
+    message.success('Kredensial VPN L2TP/SSTP berhasil dibuat')
+    await fetchMikrotikConfig(false)
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || 'Gagal mengaktifkan VPN L2TP/SSTP')
+  }
+  legacyVpnSubmitting.value = false
+}
 
 const vpnListenPort = computed(() => cfg.value.vpn_listen_port || '')
 const vpnSubnet = computed(() => cfg.value.vpn_subnet || '')
@@ -127,10 +167,35 @@ add interface=wg0 \\
 })
 
 const radiusBlock1 = computed(() => {
+  // timeout default RouterOS cuma 300ms — terlalu ketat untuk jalur internet,
+  // jadi selalu 3s. Di mode WireGuard: src-address memastikan NAS-IP = VPN IP
+  // router (kunci identifikasi di server), dan require-message-auth=no perlu di
+  // ROS 7.15+ (server tidak mengirim Message-Authenticator di balasan). Opsi
+  // require-message-auth tidak ada di ROS 6, jadi tidak ditaruh di mode IP Publik.
+  if (connectionMode.value === 'wireguard') {
+    return `/radius
+add address=${effectiveRadiusAddress.value} \\
+    secret="${radiusSecret.value}" \\
+    service=hotspot,ppp,login \\
+    src-address=${routerVpnIP.value} \\
+    timeout=3s \\
+    require-message-auth=no`
+  }
+  if (connectionMode.value === 'legacy') {
+    // src-address = IP tunnel statis router → NAS-IP unik per router walau di
+    // belakang NAT. Tanpa require-message-auth karena opsi itu tidak ada di ROS 6.
+    return `/radius
+add address=${effectiveRadiusAddress.value} \\
+    secret="${radiusSecret.value}" \\
+    service=hotspot,ppp,login \\
+    src-address=${legacyVpnIP.value || '<IP_TUNNEL>'} \\
+    timeout=3s`
+  }
   return `/radius
 add address=${effectiveRadiusAddress.value} \\
     secret="${radiusSecret.value}" \\
-    service=hotspot,ppp,login`
+    service=hotspot,ppp,login \\
+    timeout=3s`
 })
 
 const radiusBlock2 = computed(() => {
@@ -146,7 +211,8 @@ set use-radius=yes accounting=yes interim-update=5m`
 })
 
 const heartbeatScript = computed(() => {
-  return `/system scheduler add name=radius-heartbeat interval=${heartbeatInterval.value} on-event={
+  return `/system scheduler remove [find name="radius-heartbeat"]
+/system scheduler add name=radius-heartbeat interval=${heartbeatInterval.value} on-event={
   :local token "${heartbeatToken.value}"
   :local cpuLoad [/system resource get cpu-load]
   :local freeMem [/system resource get free-memory]
@@ -226,6 +292,13 @@ const vendorLabel = computed(() => ({
 
 // Paksa mode IP Publik untuk vendor tanpa WireGuard.
 watch(supportsWireguard, (ok) => { if (!ok) connectionMode.value = 'direct' }, { immediate: true })
+
+// Penomoran langkah panduan MikroTik per mode (heartbeat selalu langkah 1).
+// direct: radius=2; legacy: dial tunnel=2, radius=3; wireguard: iface=2, peer=3, radius=4.
+const radiusStepNum = computed(() =>
+  connectionMode.value === 'direct' ? 2 : connectionMode.value === 'legacy' ? 3 : 4)
+const aaaStepNum = computed(() => radiusStepNum.value + 1)
+const monStepNum = computed(() => radiusStepNum.value + 2)
 
 // Panduan vendor (non-MikroTik): langkah WireGuard hanya untuk VyOS pada mode WireGuard.
 const wgVisible = computed(() => guideType.value === 'vyos' && connectionMode.value === 'wireguard')
@@ -428,7 +501,10 @@ const bandwidthNote = computed(() => {
   }
 })
 
-async function fetchMikrotikConfig() {
+// autoSelectMode: hanya true saat modal dibuka. Refresh yang dipicu aksi di
+// dalam tab (mis. tombol "Buat Kredensial VPN") TIDAK boleh memindahkan tab
+// yang sedang dipilih user.
+async function fetchMikrotikConfig(autoSelectMode = true) {
   configLoading.value = true
   try {
     const { data: res } = await routerApi.mikrotikConfig(id)
@@ -436,10 +512,14 @@ async function fetchMikrotikConfig() {
     mikrotikConfig.value = cfg
     if (cfg.server_endpoint) serverPublicIP.value = cfg.server_endpoint
     if (cfg.server_public_key) serverPublicKey.value = cfg.server_public_key
-    // Pilih mode otomatis sesuai cara router terdaftar (VPN vs IP Publik),
-    // hanya untuk vendor yang mendukung WireGuard.
-    if ((cfg.mode === 'wireguard' || cfg.mode === 'direct') && supportsWireguard.value) {
-      connectionMode.value = cfg.mode
+    // Pilih mode otomatis sesuai cara router terdaftar (WireGuard / L2TP-SSTP /
+    // IP Publik), hanya untuk vendor yang mendukung mode pilihan tersebut.
+    if (autoSelectMode) {
+      if (cfg.mode === 'legacy' && isMikrotik.value) {
+        connectionMode.value = 'legacy'
+      } else if ((cfg.mode === 'wireguard' || cfg.mode === 'direct') && supportsWireguard.value) {
+        connectionMode.value = cfg.mode
+      }
     }
   } catch {
     // fallback: use locally computed scripts
@@ -1188,7 +1268,10 @@ onUnmounted(() => {
           <!-- Mode Selector -->
           <div class="cfg-mode-bar">
             <button class="cfg-mode-btn" :class="{ active: connectionMode === 'direct' }" @click="connectionMode = 'direct'">
-              IP Publik <span class="cfg-mode-badge">ROS 6 &amp; 7</span>
+              IP Publik <span class="cfg-mode-badge">Butuh IP publik di WAN</span>
+            </button>
+            <button class="cfg-mode-btn" :class="{ active: connectionMode === 'legacy' }" @click="connectionMode = 'legacy'">
+              VPN L2TP/SSTP <span class="cfg-mode-badge">ROS 6 &amp; 7</span>
             </button>
             <button class="cfg-mode-btn" :class="{ active: connectionMode === 'wireguard' }" @click="connectionMode = 'wireguard'">
               WireGuard VPN <span class="cfg-mode-badge">ROS 7.1+</span>
@@ -1196,9 +1279,17 @@ onUnmounted(() => {
           </div>
 
           <!-- Banner per mode -->
-          <div v-if="connectionMode === 'direct'" class="cfg-banner cfg-banner--ok">
+          <div v-if="connectionMode === 'direct'" class="cfg-banner cfg-banner--warn">
+            <n-icon class="cfg-banner-svg" :size="18"><AlertTriangle /></n-icon>
+            <span>Mode IP Publik <strong>hanya berfungsi bila MikroTik memegang IP publik langsung di interface WAN-nya</strong>. Jika WAN router mendapat IP privat dari modem/ISP (mis. <code>192.168.x.x</code>, <code>10.x.x.x</code>, <code>100.64–127.x.x</code>), server tidak bisa mengenali router dan autentikasi RADIUS <strong>selalu ditolak</strong> — gunakan mode <strong>VPN L2TP/SSTP</strong> (ROS 6 &amp; 7, tanpa perubahan besar) atau <strong>WireGuard</strong> (ROS 7). Pastikan juga router bisa akses UDP <strong>{{ mikrotikConfig?.radius_auth_port }}/{{ mikrotikConfig?.radius_acct_port }}</strong> ke server, dan izinkan UDP <strong>{{ coaPort }}</strong> masuk dari IP <strong>{{ effectiveServerPublicIP }}</strong> agar isolir/putus sesi (CoA) berfungsi.</span>
+          </div>
+          <div v-else-if="connectionMode === 'legacy' && !legacyVpnAvailable" class="cfg-banner cfg-banner--warn">
+            <n-icon class="cfg-banner-svg" :size="18"><AlertTriangle /></n-icon>
+            <span>VPN L2TP/SSTP belum diaktifkan di server. Hubungi admin, atau gunakan mode lain.</span>
+          </div>
+          <div v-else-if="connectionMode === 'legacy'" class="cfg-banner cfg-banner--ok">
             <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
-            <span>Pastikan router bisa akses internet ke UDP <strong>{{ mikrotikConfig?.radius_auth_port }}/{{ mikrotikConfig?.radius_acct_port }}</strong> server. Agar isolir/putus sesi (CoA) berfungsi, izinkan UDP <strong>{{ coaPort }}</strong> masuk dari IP <strong>{{ effectiveServerPublicIP }}</strong> di firewall router (port-forward bila router di belakang NAT).</span>
+            <span>Cocok untuk <strong>RouterOS 6</strong> dan router <strong>di belakang NAT ISP</strong> — tanpa upgrade OS, tanpa IP publik. Router membangun tunnel keluar (L2TP UDP <strong>{{ legacyL2tpPort }}</strong> atau SSTP TCP <strong>{{ legacySstpPort }}</strong>), mendapat IP tunnel tetap, dan isolir/putus sesi (CoA) tetap berfungsi menembus NAT.</span>
           </div>
           <div v-else-if="!serverPublicKey" class="cfg-banner cfg-banner--warn">
             <n-icon class="cfg-banner-svg" :size="18"><AlertTriangle /></n-icon>
@@ -1214,6 +1305,14 @@ onUnmounted(() => {
             <div v-if="connectionMode === 'wireguard'" class="cfg-info-item">
               <span class="cfg-info-label">VPN IP Router</span>
               <span class="cfg-info-value cfg-info-mono">{{ routerVpnIP || '-' }}</span>
+            </div>
+            <div v-if="connectionMode === 'legacy'" class="cfg-info-item">
+              <span class="cfg-info-label">IP Tunnel Router</span>
+              <span class="cfg-info-value cfg-info-mono">{{ legacyVpnIP || 'belum dibuat' }}</span>
+            </div>
+            <div v-if="connectionMode === 'legacy'" class="cfg-info-item">
+              <span class="cfg-info-label">Username VPN</span>
+              <span class="cfg-info-value cfg-info-mono">{{ legacyVpnUsername || 'belum dibuat' }}</span>
             </div>
             <div class="cfg-info-item">
               <span class="cfg-info-label">RADIUS Address</span>
@@ -1231,7 +1330,7 @@ onUnmounted(() => {
 
           <div v-if="connectionMode === 'wireguard'" class="cfg-step-note">
             <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
-            <div>WireGuard butuh <strong>RouterOS 7.1+</strong>. Jika router Anda masih ROS 6, gunakan mode <strong>IP Publik</strong>.</div>
+            <div>WireGuard butuh <strong>RouterOS 7.1+</strong>. Jika router Anda masih ROS 6, pakai mode <strong>VPN L2TP/SSTP</strong> (tanpa upgrade, jalan di belakang NAT) — atau mode IP Publik bila router memegang IP publik langsung di WAN.</div>
           </div>
 
           <!-- Heartbeat — WAJIB, dan harus PERTAMA: di mode IP Publik server baru
@@ -1252,6 +1351,43 @@ onUnmounted(() => {
               <pre>{{ heartbeatScript }}</pre>
               <button class="cfg-copy-btn" @click="copyToClipboard(heartbeatScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
             </div>
+          </div>
+
+          <!-- Legacy VPN Step 2: aktifkan kredensial + dial L2TP/SSTP -->
+          <div v-if="connectionMode === 'legacy'" class="cfg-step">
+            <div class="cfg-step-header">
+              <span class="cfg-step-num">2</span>
+              <div>
+                <div class="cfg-step-title">Sambungkan VPN L2TP/SSTP</div>
+                <div class="cfg-step-desc">
+                  Router membangun tunnel keluar ke server dan mendapat IP tetap <code>{{ legacyVpnIP || '…' }}</code>.
+                  Cukup pilih <strong>salah satu</strong>: L2TP (paling sederhana) atau SSTP (lewat TCP/TLS, dipakai bila UDP diblokir ISP).
+                </div>
+              </div>
+            </div>
+            <div v-if="!legacyProvisioned" class="cfg-step-note">
+              <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <span>Kredensial VPN untuk router ini belum dibuat.</span>
+                <n-button type="primary" size="small" :loading="legacyVpnSubmitting" :disabled="!legacyVpnAvailable" @click="handleEnableLegacyVpn">
+                  Buat Kredensial VPN
+                </n-button>
+              </div>
+            </div>
+            <template v-else>
+              <div class="cfg-code">
+                <pre>{{ legacyL2tpScript }}</pre>
+                <button class="cfg-copy-btn" @click="copyToClipboard(legacyL2tpScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+              </div>
+              <div class="cfg-code">
+                <pre>{{ legacySstpScript }}</pre>
+                <button class="cfg-copy-btn" @click="copyToClipboard(legacySstpScript)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
+              </div>
+              <div class="cfg-step-note">
+                <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
+                <div>Cek tunnel dengan <code>/ping {{ legacyVpnGw }}</code> dari router. Jangan aktifkan L2TP dan SSTP bersamaan — pilih salah satu.</div>
+              </div>
+            </template>
           </div>
 
           <!-- WireGuard Step 1: Interface -->
@@ -1304,7 +1440,7 @@ onUnmounted(() => {
           <!-- RADIUS Client -->
           <div class="cfg-step">
             <div class="cfg-step-header">
-              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 2 : 4 }}</span>
+              <span class="cfg-step-num">{{ radiusStepNum }}</span>
               <div>
                 <div class="cfg-step-title">Daftarkan Client RADIUS</div>
                 <div class="cfg-step-desc">Arahkan ke <code>{{ effectiveRadiusAddress }}</code> &amp; aktifkan Incoming (CoA).</div>
@@ -1318,12 +1454,16 @@ onUnmounted(() => {
               <pre>{{ radiusBlock2 }}</pre>
               <button class="cfg-copy-btn" @click="copyToClipboard(radiusBlock2)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
             </div>
+            <div v-if="connectionMode === 'direct' || connectionMode === 'legacy'" class="cfg-step-note">
+              <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
+              <div><strong>RouterOS 7.15+</strong>: tambahkan <code>require-message-auth=no</code> pada entri <code>/radius</code> di atas — tanpa ini balasan server ditolak router. Opsi ini tidak ada di ROS 6 (jangan dipakai di ROS 6, akan error).</div>
+            </div>
           </div>
 
           <!-- Aktifkan use-radius -->
           <div class="cfg-step">
             <div class="cfg-step-header">
-              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 3 : 5 }}</span>
+              <span class="cfg-step-num">{{ aaaStepNum }}</span>
               <div>
                 <div class="cfg-step-title">Aktifkan Use RADIUS di PPP</div>
                 <div class="cfg-step-desc">Sesi PPPoE pelanggan diautentikasi server RADIUS. <strong>interim-update=5m wajib</strong> — tanpa itu server menganggap sesi putus setelah 10 menit dan status online pelanggan jadi tidak akurat.</div>
@@ -1333,12 +1473,16 @@ onUnmounted(() => {
               <pre>{{ pppoeBlock2 }}</pre>
               <button class="cfg-copy-btn" @click="copyToClipboard(pppoeBlock2)"><n-icon :size="14"><Copy /></n-icon> Salin</button>
             </div>
+            <div class="cfg-step-note">
+              <n-icon class="cfg-note-svg" :size="16"><InfoCircle /></n-icon>
+              <div><strong>Penting:</strong> <code>/ppp secret</code> lokal menang atas RADIUS. Hapus/disable secret lokal yang username-nya sama dengan pelanggan di panel, dan matikan PPPoE server lama yang masih memakai profil non-RADIUS di interface yang sama — kalau tidak, pelanggan bisa terautentikasi lokal dan paket/isolir dari panel tidak berlaku.</div>
+            </div>
           </div>
 
           <!-- Interface monitor (push, tanpa VPN) -->
           <div class="cfg-step">
             <div class="cfg-step-header">
-              <span class="cfg-step-num">{{ connectionMode === 'direct' ? 4 : 6 }}</span>
+              <span class="cfg-step-num">{{ monStepNum }}</span>
               <div>
                 <div class="cfg-step-title">Monitoring Bandwidth Interface <span class="cfg-opt">opsional</span></div>
                 <div class="cfg-step-desc">Router mengirim counter rx/tx tiap 5 detik (hanya interface fisik, bukan sesi PPPoE) agar grafik trafik per-interface tampil — <strong>tanpa perlu VPN</strong>.</div>

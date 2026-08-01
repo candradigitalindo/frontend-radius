@@ -38,7 +38,7 @@ function resetForm() {
 const createForm = ref({ name: '', router_type: 'mikrotik' })
 
 const routerTypeOptions = [
-  { label: 'MikroTik', sub: 'RouterOS', value: 'mikrotik', desc: 'IP Publik & WireGuard VPN', badge: 'WireGuard', color: '#e11d48' },
+  { label: 'MikroTik', sub: 'RouterOS', value: 'mikrotik', desc: 'IP Publik, L2TP/SSTP & WireGuard VPN', badge: 'WireGuard', color: '#e11d48' },
   { label: 'VyOS / EdgeRouter', sub: 'VyOS / EdgeOS', value: 'vyos', desc: 'IP Publik & WireGuard VPN', badge: 'WireGuard', color: '#0891b2' },
   { label: 'Cisco', sub: 'IOS / IOS-XE', value: 'cisco', desc: 'AAA RADIUS via IP Publik', badge: 'IP Publik', color: '#2563eb' },
   { label: 'Huawei', sub: 'VRP / BRAS', value: 'huawei', desc: 'RADIUS template via IP Publik', badge: 'IP Publik', color: '#dc2626' },

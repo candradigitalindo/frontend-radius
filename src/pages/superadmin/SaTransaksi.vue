@@ -242,8 +242,17 @@ const columns: DataTableColumns = [
   {
     title: 'Jumlah',
     key: 'amount',
-    width: 120,
-    render: (row: any) => h('span', { style: 'font-size:13px; font-weight:600' }, fmtRp(row.amount)),
+    width: 130,
+    render: (row: any) => {
+      const isBankTransfer = row.payment_method === 'bank_transfer' && row.unique_code
+      const total = isBankTransfer ? row.amount + row.unique_code : row.amount
+      return h('div', {}, [
+        h('span', { style: 'font-size:13px; font-weight:600' }, fmtRp(total)),
+        isBankTransfer
+          ? h('div', { style: 'font-size:10px; color:#f59e0b; margin-top:2px' }, `kode unik ${String(row.unique_code).padStart(3, '0')}`)
+          : null,
+      ])
+    },
   },
   {
     title: 'Status',
@@ -255,7 +264,7 @@ const columns: DataTableColumns = [
     title: 'Metode',
     key: 'payment_method',
     width: 100,
-    render: (row: any) => h('span', { style: 'font-size:12px' }, row.payment_method || '—'),
+    render: (row: any) => h('span', { style: 'font-size:12px' }, row.payment_method === 'bank_transfer' ? 'Transfer Bank' : (row.payment_method || '—')),
   },
   {
     title: 'Tanggal',

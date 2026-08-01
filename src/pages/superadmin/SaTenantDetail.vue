@@ -7,20 +7,24 @@ import {
   useMessage,
 } from 'naive-ui'
 import {
-  AlertCircleOutline, LogoWhatsapp, InformationCircleOutline, TrashOutline,
+  AlertCircleOutline, LogoWhatsapp, InformationCircleOutline, TrashOutline, LogInOutline,
 } from '@vicons/ionicons5'
 import { tenantApi } from '../../api'
 import { adminApi } from '../../api'
+import { useAuthStore } from '../../stores/auth'
+import { stashCurrentSession } from '../../api/impersonation'
 
 const route = useRoute()
 const router = useRouter()
 const message = useMessage()
+const authStore = useAuthStore()
 const id = route.params.id as string
 
 const loading = ref(true)
 const saving = ref(false)
 const resettingPass = ref(false)
 const approving = ref(false)
+const impersonating = ref(false)
 const showDeleteModal = ref(false)
 const deleteConfirmName = ref('')
 const deleting = ref(false)
@@ -207,6 +211,19 @@ async function handleSave() {
   saving.value = false
 }
 
+async function handleImpersonate() {
+  impersonating.value = true
+  try {
+    const res = await tenantApi.impersonate(id)
+    stashCurrentSession(authStore.user, id, form.value.name)
+    authStore.setAuth(res.data)
+    router.push('/')
+  } catch (e: any) {
+    message.error(e.response?.data?.error || 'Gagal masuk sebagai tenant')
+  }
+  impersonating.value = false
+}
+
 async function handleDelete() {
   if (deleteConfirmName.value !== form.value.name) {
     message.warning('Nama tenant tidak sesuai')
@@ -244,6 +261,10 @@ onUnmounted(() => {
           ← Daftar Tenant
         </button>
         <div v-if="!isMobile" class="topbar-actions">
+          <n-button ghost size="small" :loading="impersonating" @click="handleImpersonate">
+            <template #icon><n-icon :component="LogInOutline" /></template>
+            Login sebagai Tenant
+          </n-button>
           <n-button ghost size="small" @click="router.push('/superadmin/tenants')">Batal</n-button>
           <n-button type="primary" size="small" :loading="saving" @click="handleSave">
             Simpan Perubahan
@@ -508,6 +529,10 @@ onUnmounted(() => {
 
       <!-- Mobile Action Bar -->
       <div v-if="isMobile" class="mobile-actions">
+        <n-button block ghost :loading="impersonating" @click="handleImpersonate">
+          <template #icon><n-icon :component="LogInOutline" /></template>
+          Login sebagai Tenant
+        </n-button>
         <n-button block ghost @click="router.push('/superadmin/tenants')">Batal</n-button>
         <n-button block type="primary" :loading="saving" @click="handleSave">Simpan Perubahan</n-button>
       </div>

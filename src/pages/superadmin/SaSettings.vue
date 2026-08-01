@@ -192,10 +192,13 @@ const form = reactive({
 })
 
 const pgProviderOptions = [
+  { label: 'Transfer Bank BCA (Manual)', value: 'bank_transfer' },
   { label: 'Midtrans', value: 'midtrans' },
   { label: 'Tripay', value: 'tripay' },
   { label: 'Xendit', value: 'xendit' },
 ]
+
+const isBankTransfer = computed(() => form.pg_provider === 'bank_transfer')
 
 // Field per provider menyesuaikan istilah & kebutuhan masing-masing gateway.
 // Mapping ini HARUS cocok dengan backend (loadSAPGConfig & TestPGConnection):
@@ -204,6 +207,12 @@ const pgProviderOptions = [
 //   pg_merchant_id-> Tripay Merchant Code                     (lainnya: tidak dipakai)
 const pgFields = computed(() => {
   switch (form.pg_provider) {
+    case 'bank_transfer':
+      return {
+        apiKey:    { show: false, label: '', ph: '', hint: '' },
+        secretKey: { show: false, label: '', ph: '', hint: '' },
+        merchant:  { show: false, label: '', ph: '', hint: '' },
+      }
     case 'xendit':
       return {
         apiKey:    { show: true,  label: 'Secret API Key', ph: 'xnd_production_... / xnd_development_...', hint: 'Dashboard Xendit → Settings → API Keys (Secret Key)' },
@@ -532,7 +541,7 @@ onUnmounted(() => {
 
           <div class="tab-content">
             <!-- Status Card -->
-              <div class="status-card pg-status-card">
+              <div v-if="!isBankTransfer" class="status-card pg-status-card">
               <div class="status-icon-wrap pg-icon">
                 <n-icon :component="CardOutline" :size="28" />
               </div>
@@ -561,6 +570,11 @@ onUnmounted(() => {
             <n-alert type="warning" :bordered="false" style="margin-bottom: 20px; border-radius: 10px">
               <template #icon><n-icon :component="InformationCircleOutline" /></template>
               Konfigurasi ini digunakan khusus untuk pembayaran <strong>subscribe tenant</strong> ke platform. Bukan untuk pembayaran pelanggan ISP.
+            </n-alert>
+
+            <n-alert v-if="isBankTransfer" type="info" :bordered="false" style="margin-bottom: 20px; border-radius: 10px">
+              <template #icon><n-icon :component="InformationCircleOutline" /></template>
+              Tenant membayar via transfer manual dengan kode unik 3 digit di nominal agar mudah diverifikasi. Rekening tujuan dikonfigurasi lewat environment variable <code>BANK_TRANSFER_*</code> di backend — tidak perlu API key.
             </n-alert>
 
             <n-form label-placement="top" class="settings-form">
@@ -600,7 +614,7 @@ onUnmounted(() => {
                     <template #feedback><span class="pg-hint">{{ pgFields.apiKey.hint }}</span></template>
                   </n-form-item>
                 </n-grid-item>
-                <n-grid-item span="2 m:1">
+                <n-grid-item v-if="pgFields.secretKey.show" span="2 m:1">
                   <n-form-item :label="pgFields.secretKey.label">
                     <n-input-group>
                       <n-input
@@ -616,7 +630,7 @@ onUnmounted(() => {
                     <template #feedback><span class="pg-hint">{{ pgFields.secretKey.hint }}</span></template>
                   </n-form-item>
                 </n-grid-item>
-                <n-grid-item span="2">
+                <n-grid-item v-if="!isBankTransfer" span="2">
                   <n-form-item label="Mode Sandbox">
                     <div class="sandbox-toggle">
                       <n-switch v-model:value="form.pg_sandbox">
@@ -639,35 +653,37 @@ onUnmounted(() => {
             </n-form>
 
             <!-- Webhook URLs -->
-            <n-divider>
-              <n-text depth="3" style="font-size: 12px">URL Webhook Subscription</n-text>
-            </n-divider>
-            <p style="font-size: 13px; opacity: 0.6; margin: 0 0 12px">
-              Daftarkan URL berikut ke dashboard payment gateway agar notifikasi pembayaran subscribe tenant diterima otomatis.
-            </p>
-            <div v-if="webhooks.length === 0" style="color: rgba(128,128,128,0.6); font-size: 13px; padding: 4px 0">
-              Memuat URL webhook...
-            </div>
-            <div v-else class="webhook-list">
-              <div v-for="w in webhooks" :key="w.event" class="webhook-item">
-                <div class="webhook-meta">
-                  <n-tag :bordered="false" size="small" type="error" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em">
-                    {{ w.event.replace(/_/g, ' ') }}
-                  </n-tag>
-                </div>
-                <div class="webhook-url-row">
-                  <code class="webhook-url">{{ w.url }}</code>
-                  <n-button
-                    size="small"
-                    :type="copyingWebhook === w.event ? 'success' : 'default'"
-                    @click="copyWebhook(w.event)"
-                    style="flex-shrink: 0"
-                  >
-                    {{ copyingWebhook === w.event ? 'Tersalin!' : 'Salin' }}
-                  </n-button>
+            <template v-if="!isBankTransfer">
+              <n-divider>
+                <n-text depth="3" style="font-size: 12px">URL Webhook Subscription</n-text>
+              </n-divider>
+              <p style="font-size: 13px; opacity: 0.6; margin: 0 0 12px">
+                Daftarkan URL berikut ke dashboard payment gateway agar notifikasi pembayaran subscribe tenant diterima otomatis.
+              </p>
+              <div v-if="webhooks.length === 0" style="color: rgba(128,128,128,0.6); font-size: 13px; padding: 4px 0">
+                Memuat URL webhook...
+              </div>
+              <div v-else class="webhook-list">
+                <div v-for="w in webhooks" :key="w.event" class="webhook-item">
+                  <div class="webhook-meta">
+                    <n-tag :bordered="false" size="small" type="error" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em">
+                      {{ w.event.replace(/_/g, ' ') }}
+                    </n-tag>
+                  </div>
+                  <div class="webhook-url-row">
+                    <code class="webhook-url">{{ w.url }}</code>
+                    <n-button
+                      size="small"
+                      :type="copyingWebhook === w.event ? 'success' : 'default'"
+                      @click="copyWebhook(w.event)"
+                      style="flex-shrink: 0"
+                    >
+                      {{ copyingWebhook === w.event ? 'Tersalin!' : 'Salin' }}
+                    </n-button>
+                  </div>
                 </div>
               </div>
-            </div>
+            </template>
           </div>
         </n-tab-pane>
 

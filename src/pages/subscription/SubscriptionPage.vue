@@ -11,6 +11,7 @@ import {
 } from '@vicons/tabler'
 import { subscriptionApi, tenantApi } from '../../api'
 import { useAuthStore } from '../../stores/auth'
+import BankTransferModal from '../../components/BankTransferModal.vue'
 
 const authStore = useAuthStore()
 const message = useMessage()
@@ -23,6 +24,8 @@ const plans = ref<any[]>([])
 const orders = ref<any[]>([])
 const tenant = ref<any>({})
 const activeTab = ref('plans')
+const showBankTransferModal = ref(false)
+const bankTransferInfo = ref<any>(null)
 
 function normalizePlanSlug(plan: string | undefined | null): string {
   if (!plan) return ''
@@ -191,7 +194,11 @@ async function handlePay(orderId: string) {
     const snapToken: string | undefined = data?.snap_token
     const paymentURL: string | undefined = data?.payment_url
 
-    if (snapToken) {
+    if (data?.bank_account_number) {
+      bankTransferInfo.value = data
+      showBankTransferModal.value = true
+      await fetchData()
+    } else if (snapToken) {
       const sandbox = paymentURL?.includes('sandbox') ?? false
       await loadSnapScript(sandbox)
       ;(window as any).snap.pay(snapToken, {
@@ -406,8 +413,13 @@ onMounted(fetchData)
 
               <!-- Amount + time -->
               <div class="oc-amount-row">
-                <span class="oc-amount">{{ formatRupiah(order.amount) }}</span>
+                <span class="oc-amount">
+                  {{ formatRupiah(order.payment_method === 'bank_transfer' ? order.amount + (order.unique_code || 0) : order.amount) }}
+                </span>
                 <span class="oc-time">{{ relativeTime(order.created_at) }}</span>
+              </div>
+              <div v-if="order.payment_method === 'bank_transfer' && order.status === 'pending'" class="oc-unique-hint">
+                Termasuk kode unik {{ String(order.unique_code || 0).padStart(3, '0') }} agar mudah diverifikasi
               </div>
 
               <!-- Details grid -->
@@ -425,7 +437,7 @@ onMounted(fetchData)
                 <div v-if="order.payment_method" class="oc-detail">
                   <n-icon :size="13"><CreditCard /></n-icon>
                   <span class="od-lbl">Metode</span>
-                  <span class="od-val">{{ order.payment_method }}</span>
+                  <span class="od-val">{{ order.payment_method === 'bank_transfer' ? 'Transfer Bank' : order.payment_method }}</span>
                 </div>
                 <div v-if="order.paid_at" class="oc-detail">
                   <n-icon :size="13" style="color:#22c55e"><CircleCheck /></n-icon>
@@ -474,7 +486,7 @@ onMounted(fetchData)
                   @click="handlePay(order.id)"
                 >
                   <template #icon><n-icon :size="13"><CreditCard /></n-icon></template>
-                  Buat Pembayaran
+                  {{ order.payment_method === 'bank_transfer' ? 'Lihat Info Transfer' : 'Buat Pembayaran' }}
                 </n-button>
               </div>
             </div>
@@ -488,6 +500,8 @@ onMounted(fetchData)
         </n-empty>
       </n-tab-pane>
     </n-tabs>
+
+    <BankTransferModal v-model:show="showBankTransferModal" :info="bankTransferInfo" />
   </n-spin>
 </template>
 <style scoped>
@@ -849,6 +863,12 @@ onMounted(fetchData)
 
 .oc-amount { font-size: 20px; font-weight: 800; letter-spacing: -0.3px; }
 .oc-time   { font-size: 11px; opacity: 0.38; white-space: nowrap; }
+
+.oc-unique-hint {
+  font-size: 11px;
+  opacity: 0.55;
+  margin-top: -6px;
+}
 
 .oc-details {
   display: grid;
