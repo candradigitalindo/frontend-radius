@@ -218,6 +218,10 @@ onMounted(async () => {
       const { data } = await customerApi.get(route.params.id as string)
       const c = data.data || data
       ;(form.value as any)._customer_id = c.id
+      // Respons detail memakai bentuk bersarang (access/billing/connection),
+      // bukan field datar — baca dari sana agar form memuat nilai asli.
+      const bill = c.billing || {}
+      const joinDate = bill.join_date || c.join_date
       Object.assign(form.value, {
         customer_code: c.customer_code,
         name: c.name,
@@ -225,25 +229,25 @@ onMounted(async () => {
         phone: c.phone,
         email: c.email || '',
         address: c.address || '',
-        connection_type: c.connection_type || 'pppoe',
-        pppoe_username: c.pppoe_username || '',
-        pppoe_password: c.pppoe_password || '',
-        ip_address: c.ip_address || '',
+        connection_type: c.connection?.type || c.connection_type || 'pppoe',
+        pppoe_username: c.access?.pppoe_username || c.pppoe_username || '',
+        pppoe_password: c.access?.pppoe_password || c.pppoe_password || '',
+        ip_address: c.connection?.configured_ip || c.ip_address || '',
         package_id: c.package_id || null,
         router_id: c.router_id || null,
         odp_port_id: c.odp_port_id || null,
         serial_number: c.ont?.serial_number || '',
         ont_vendor: c.ont?.vendor || '',
         ont_model: c.ont?.model || '',
-        join_date_ts: c.join_date && c.join_date !== '0001-01-01T00:00:00Z' ? new Date(c.join_date).getTime() : Date.now(),
-        billing_date: c.billing_date || new Date().getDate(),
-        billing_type: c.billing_type || 'fixed',
+        join_date_ts: joinDate && joinDate !== '0001-01-01T00:00:00Z' ? new Date(joinDate).getTime() : Date.now(),
+        billing_date: bill.billing_date || c.billing_date || new Date().getDate(),
+        billing_type: bill.billing_type || c.billing_type || 'fixed',
         billing_date_ts: null as number | null,
-        billing_deadline: c.billing_deadline || 20,
-        custom_price: c.custom_price ?? null,
-        discount: c.discount || 0,
-        additional_fee: c.additional_fee || 0,
-        fee_description: c.fee_description || '',
+        billing_deadline: bill.billing_deadline || c.billing_deadline || 20,
+        custom_price: bill.custom_price ?? c.custom_price ?? null,
+        discount: bill.discount ?? c.discount ?? 0,
+        additional_fee: bill.additional_fee ?? c.additional_fee ?? 0,
+        fee_description: bill.fee_description || c.fee_description || '',
         notes: c.notes || '',
         latitude: c.latitude ?? null,
         longitude: c.longitude ?? null,
@@ -257,13 +261,65 @@ onMounted(async () => {
       const now = new Date()
       now.setDate(form.value.billing_date)
       form.value.billing_date_ts = now.getTime()
-      customPriceDisplay.value = c.custom_price != null ? fmtRp(c.custom_price) : ''
-      discountDisplay.value = fmtRp(c.discount || 0)
-      additionalFeeDisplay.value = fmtRp(c.additional_fee || 0)
+      customPriceDisplay.value = form.value.custom_price != null ? fmtRp(form.value.custom_price) : ''
+      discountDisplay.value = fmtRp(form.value.discount || 0)
+      additionalFeeDisplay.value = fmtRp(form.value.additional_fee || 0)
     }
   } catch { message.error('Gagal memuat data') }
   loading.value = false
 })
+
+function buildProfilePayload() {
+  return {
+    name: form.value.name,
+    nik: form.value.nik,
+    phone: form.value.phone,
+    email: form.value.email,
+    address: form.value.address,
+    latitude: form.value.latitude,
+    longitude: form.value.longitude,
+    notes: form.value.notes,
+    reseller_id: form.value.reseller_id ?? '',
+  }
+}
+
+function buildAccessPayload() {
+  const isFtth = form.value.connection_type === 'ftth'
+  return {
+    connection_type: form.value.connection_type,
+    pppoe_username: form.value.pppoe_username?.trim() || '',
+    pppoe_password: form.value.pppoe_password?.trim() || '',
+    ip_address: form.value.ip_address || '',
+    router_id: form.value.router_id,
+    // '' = lepas port; backend otomatis melepas port bila tipe bukan ftth
+    odp_port_id: isFtth ? (form.value.odp_port_id || '') : '',
+  }
+}
+
+// Endpoint service menerima tanggal penuh lalu mengambil hari-nya;
+// bentuk hari (1-28) dari form menjadi tanggal di bulan berjalan.
+function dayToDateString(day: number) {
+  const d = new Date()
+  const dd = Math.min(Math.max(day || 1, 1), 28)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(dd).padStart(2, '0')}`
+}
+
+function buildServicePayload() {
+  const p: Record<string, any> = {
+    package_id: form.value.package_id,
+    billing_type: form.value.billing_type || 'fixed',
+    join_date: form.value.join_date_ts ? formatLocalDate(form.value.join_date_ts) : undefined,
+    discount: form.value.discount ?? 0,
+    additional_fee: form.value.additional_fee ?? 0,
+    fee_description: form.value.fee_description || '',
+  }
+  if (form.value.billing_type !== 'date_range') {
+    p.invoice_date = dayToDateString(form.value.billing_date)
+    p.billing_due_date = dayToDateString(form.value.billing_deadline)
+  }
+  if (form.value.custom_price != null && form.value.custom_price > 0) p.custom_price = form.value.custom_price
+  return p
+}
 
 async function handleSubmit() {
   saving.value = true
@@ -275,29 +331,13 @@ async function handleSubmit() {
       if (section === 'pribadi' && !form.value.name) { message.warning('Nama wajib diisi'); saving.value = false; return }
       if (section === 'tagihan' && !form.value.package_id) { message.warning('Paket wajib dipilih'); saving.value = false; return }
 
-      // Kirim seluruh data agar PUT tidak mereset field lain
-      const { billing_date_ts, join_date_ts, custom_price, customer_code, pppoe_username, pppoe_password, ...rest } = form.value
-      const payload: Record<string, any> = {
-        ...rest,
-        join_date: join_date_ts ? formatLocalDate(join_date_ts) : undefined,
-        billing_date: rest.billing_type === 'date_range' ? undefined : (rest.billing_date || new Date().getDate()),
-        billing_type: rest.billing_type || 'fixed',
-      }
-      if (rest.billing_type === 'date_range') {
-        delete payload.billing_date
-        delete payload.billing_deadline
-      }
-      if (custom_price != null && custom_price > 0) payload.custom_price = custom_price
-      if (rest.connection_type !== 'ftth') {
-        delete payload.serial_number
-        delete payload.ont_vendor
-        delete payload.ont_model
-        delete payload.odp_port_id
-      }
-      delete (payload as any)._customer_id
-
+      // PUT /customers/:id hanya menyimpan field profil di backend — perubahan
+      // koneksi & tagihan harus lewat endpoint section masing-masing.
       const labels: Record<string, string> = { pribadi: 'Data pribadi', tagihan: 'Paket & tagihan', koneksi: 'Koneksi' }
-      await customerApi.update(route.params.id as string, payload)
+      const id = route.params.id as string
+      if (section === 'pribadi') await customerApi.updateProfile(id, buildProfilePayload())
+      else if (section === 'koneksi') await customerApi.updateAccess(id, buildAccessPayload())
+      else if (section === 'tagihan') await customerApi.updateService(id, buildServicePayload())
       message.success(`${labels[section] || 'Data'} berhasil diperbarui`)
       router.push(`/customers/${route.params.id}`)
       saving.value = false
@@ -356,7 +396,12 @@ async function handleSubmit() {
     }
     delete (payload as any)._customer_id
     if (isEdit.value) {
-      await customerApi.update(route.params.id as string, payload)
+      // Edit penuh: simpan lewat ketiga endpoint section agar semua perubahan
+      // (profil, koneksi, tagihan) benar-benar tersimpan.
+      const id = route.params.id as string
+      await customerApi.updateProfile(id, buildProfilePayload())
+      await customerApi.updateAccess(id, buildAccessPayload())
+      await customerApi.updateService(id, buildServicePayload())
       message.success('Pelanggan berhasil diperbarui')
     } else {
       // Check free plan limit (max 20 customers)

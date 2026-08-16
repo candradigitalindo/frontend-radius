@@ -154,6 +154,29 @@ async function renderMap() {
     }
   }
 
+  // Splitters / ODC (ikut layer ODP)
+  if (showODP.value) {
+    for (const item of items.value) {
+      if (item.type !== 'splitter' || !item.latitude || !item.longitude) continue
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width:14px;height:14px;transform:rotate(45deg);border-radius:3px;
+          background:#a855f7;border:2px solid #fff;
+          box-shadow:0 1px 4px rgba(0,0,0,.5);
+        "></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+      })
+      const marker = L.marker([item.latitude, item.longitude], { icon })
+      marker.bindPopup(`
+        <b>${item.name}</b><br>
+        <span style="color:#a855f7">ODC / Splitter</span>
+      `)
+      odpLayer!.addLayer(marker)
+    }
+  }
+
   // ODPs
   if (showODP.value) {
     for (const item of items.value) {

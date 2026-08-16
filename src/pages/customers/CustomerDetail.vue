@@ -19,7 +19,7 @@ import {
   useDialog,
   useMessage,
 } from 'naive-ui'
-import { customerApi, ontApi, routerApi, packageApi } from '../../api'
+import { customerApi, ontApi, routerApi, packageApi, odpApi } from '../../api'
 
 import { formatDistanceToNow } from 'date-fns'
 import { id as localeID } from 'date-fns/locale'
@@ -42,7 +42,39 @@ const showBillingModal = ref(false)
 const saving = ref(false)
 
 const profileForm = ref({ name: '', phone: '', nik: '', address: '', email: '' })
-const connForm = ref({ router_id: null as string | null, connection_type: 'pppoe', pppoe_username: '', pppoe_password: '' })
+const connForm = ref({
+  router_id: null as string | null,
+  connection_type: 'pppoe',
+  pppoe_username: '',
+  pppoe_password: '',
+  odp_id: null as string | null,
+  odp_port_id: null as string | null,
+})
+const connectionTypeOptions = [
+  { label: 'PPPoE', value: 'pppoe' },
+  { label: 'Static IP', value: 'static' },
+  { label: 'DHCP', value: 'dhcp' },
+  { label: 'FTTH (Fiber)', value: 'ftth' },
+]
+const odps = ref<any[]>([])
+const odpPorts = ref<any[]>([])
+const odpOptions = computed(() => odps.value.map((o: any) => ({ label: o.name, value: o.id })))
+const odpPortOptions = computed(() => odpPorts.value.map((p: any) => ({
+  label: `Port ${p.port_number}${p.notes ? ` – ${p.notes}` : ''}`,
+  value: p.id,
+  disabled: p.status === 'used' && p.customer_id !== customer.value?.id,
+})))
+
+async function onConnOdpChange(id: string | null) {
+  connForm.value.odp_port_id = null
+  odpPorts.value = []
+  if (id) {
+    try {
+      const { data } = await odpApi.ports(id)
+      odpPorts.value = data?.data || data || []
+    } catch { /* ignore */ }
+  }
+}
 const billForm = ref({ 
   package_id: null as string | null, 
   billing_type: 'fixed', 
@@ -79,14 +111,27 @@ function openProfileEdit() {
   showProfileModal.value = true
 }
 
-function openConnectionEdit() {
+async function openConnectionEdit() {
   connForm.value = {
     router_id: customer.value.router_id || null,
     connection_type: customer.value.connection?.type || 'pppoe',
     pppoe_username: customer.value.access?.pppoe_username || '',
     pppoe_password: customer.value.access?.pppoe_password || '',
+    odp_id: customer.value.odp_port?.odp_id || null,
+    odp_port_id: customer.value.odp_port_id || null,
   }
   showConnectionModal.value = true
+  if (!odps.value.length) {
+    try {
+      const { data } = await odpApi.list()
+      odps.value = data?.data || data || []
+    } catch { /* ignore */ }
+  }
+  if (connForm.value.odp_id) {
+    const keepPort = connForm.value.odp_port_id
+    await onConnOdpChange(connForm.value.odp_id)
+    connForm.value.odp_port_id = keepPort
+  }
 }
 
 function openBillingEdit() {
@@ -114,11 +159,14 @@ async function handleSaveProfile() {
 async function handleSaveConnection() {
   saving.value = true
   try {
+    const isFtth = connForm.value.connection_type === 'ftth'
     const payload = {
       router_id: connForm.value.router_id,
       connection_type: connForm.value.connection_type,
       pppoe_username: connForm.value.pppoe_username,
       pppoe_password: connForm.value.pppoe_password,
+      // '' = lepas port; backend otomatis melepas port bila tipe bukan ftth
+      odp_port_id: isFtth ? (connForm.value.odp_port_id || '') : '',
     }
     await customerApi.updateAccess(id, payload)
     message.success('Akses koneksi diperbarui')
@@ -632,9 +680,14 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
 
     <n-modal v-model:show="showConnectionModal" preset="card" title="Edit Koneksi" style="width: min(500px, 95vw)">
       <n-form label-placement="top">
+        <n-form-item label="Tipe Koneksi"><n-select v-model:value="connForm.connection_type" :options="connectionTypeOptions" /></n-form-item>
         <n-form-item label="Router"><n-select v-model:value="connForm.router_id" :options="routerOptions" filterable /></n-form-item>
         <n-form-item label="PPPoE User"><n-input v-model:value="connForm.pppoe_username" /></n-form-item>
         <n-form-item label="PPPoE Pass"><n-input v-model:value="connForm.pppoe_password" type="password" show-password-toggle /></n-form-item>
+        <template v-if="connForm.connection_type === 'ftth'">
+          <n-form-item label="ODP"><n-select v-model:value="connForm.odp_id" :options="odpOptions" clearable filterable placeholder="Pilih ODP" @update:value="onConnOdpChange" /></n-form-item>
+          <n-form-item label="Port ODP"><n-select v-model:value="connForm.odp_port_id" :options="odpPortOptions" clearable filterable placeholder="Pilih port" :disabled="!connForm.odp_id" /></n-form-item>
+        </template>
         <n-button type="primary" block :loading="saving" @click="handleSaveConnection">Simpan</n-button>
       </n-form>
     </n-modal>
