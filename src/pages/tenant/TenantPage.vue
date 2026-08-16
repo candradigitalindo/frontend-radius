@@ -180,6 +180,8 @@ async function saveTenant() {
       due_day: tenant.value.due_day || 20,
       isolir_day: tenant.value.isolir_day || 21,
       grace_period: tenant.value.grace_period || 3,
+      default_billing_type: tenant.value.default_billing_type || 'fixed',
+      default_payment_timing: tenant.value.default_payment_timing || 'due_date',
       is_active: tenant.value.is_active !== false,
     }
     const { data } = await tenantApi.update(payload)
