@@ -206,8 +206,11 @@ set accept=yes port=${coaPort.value}`
 const pppoeBlock2 = computed(() => {
   // interim-update wajib: server menandai sesi putus (NAS-Timeout) bila tidak ada
   // accounting update >10 menit, jadi router harus lapor tiap 5 menit.
+  // one-session-per-host: router langsung memutus sesi lama saat perangkat yang
+  // sama redial — mencegah interface ganda <pppoe-user-1> (selaras dgn skrip backend).
   return `/ppp aaa
-set use-radius=yes accounting=yes interim-update=5m`
+set use-radius=yes accounting=yes interim-update=5m
+/interface pppoe-server server set [find] one-session-per-host=yes`
 })
 
 const heartbeatScript = computed(() => {
@@ -1466,7 +1469,7 @@ onUnmounted(() => {
               <span class="cfg-step-num">{{ aaaStepNum }}</span>
               <div>
                 <div class="cfg-step-title">Aktifkan Use RADIUS di PPP</div>
-                <div class="cfg-step-desc">Sesi PPPoE pelanggan diautentikasi server RADIUS. <strong>interim-update=5m wajib</strong> — tanpa itu server menganggap sesi putus setelah 10 menit dan status online pelanggan jadi tidak akurat.</div>
+                <div class="cfg-step-desc">Sesi PPPoE pelanggan diautentikasi server RADIUS. <strong>interim-update=5m wajib</strong> — tanpa itu server menganggap sesi putus setelah 10 menit dan status online pelanggan jadi tidak akurat. Baris <code>one-session-per-host</code> membuat router langsung memutus sesi lama saat pelanggan redial, sehingga tidak muncul interface ganda <code>&lt;pppoe-user-1&gt;</code>.</div>
               </div>
             </div>
             <div class="cfg-code">

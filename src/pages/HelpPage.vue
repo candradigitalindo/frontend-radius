@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NIcon } from 'naive-ui'
+import { NIcon, NInput } from 'naive-ui'
 import {
   GlobeOutline as NetworkIcon,
   HardwareChipOutline as RouterIcon,
@@ -9,6 +9,7 @@ import {
   MapOutline as MapIcon,
   ServerOutline as IpamIcon,
   SpeedometerOutline as BandwidthIcon,
+  PulseOutline as SaturationIcon,
   BuildOutline as AdminIcon,
   LogoWhatsapp as WaIcon,
   BusinessOutline as TenantIcon,
@@ -16,6 +17,7 @@ import {
   CardOutline as PaymentIcon,
   PeopleOutline as CustomerIcon,
   CubeOutline as PackageIcon,
+  CloudOutline as AcsIcon,
   BulbOutline as TipIcon,
   ChevronForwardOutline as ChevIcon,
   WalletOutline as FinanceIcon,
@@ -30,6 +32,12 @@ import {
   GiftOutline as RewardIcon,
   ShareSocialOutline as ReferralIcon,
   StorefrontOutline as ResellerIcon,
+  PhonePortraitOutline as PortalIcon,
+  KeyOutline as AccessIcon,
+  ShieldCheckmarkOutline as RoleIcon,
+  RefreshOutline as UpgradeIcon,
+  SettingsOutline as SettingIcon,
+  SearchOutline as SearchIcon,
 } from '@vicons/ionicons5'
 
 interface Topic {
@@ -38,6 +46,7 @@ interface Topic {
   desc: string
   steps: string[]
   tip?: string
+  badge?: string
 }
 interface Section {
   key: string
@@ -61,13 +70,13 @@ const sections: Section[] = [
         title: 'Router',
         desc: 'Hubungkan router ke server RADIUS sebagai gerbang autentikasi pelanggan. Mendukung MikroTik, Cisco, Huawei, Juniper, VyOS/EdgeRouter, dan Ruijie.',
         steps: [
-          'Buka Jaringan → Router → Daftarkan Router.',
-          'Isi nama dan pilih jenis router (kartu pemilih bisa dicari).',
-          'Buka detail router → tombol Konfigurasi → ikuti panduan yang menyesuaikan merek. Mode WireGuard hanya untuk MikroTik & VyOS/EdgeRouter; merek lain memakai IP Publik.',
-          'Salin skrip ke router — termasuk blok interim accounting (wajib, agar status online pelanggan akurat).',
+          'Buka Jaringan → Router → Daftarkan Router, isi nama dan pilih jenis router.',
+          'Buka detail router → tombol Konfigurasi. Panduan MikroTik terdiri dari 3 tab berurutan: Persiapan (WAN & internet), PPP Server, lalu Koneksi RADIUS.',
+          'Pilih mode koneksi sesuai kondisi: WireGuard (MikroTik RouterOS 7 / VyOS — paling disarankan), VPN Legacy L2TP/SSTP (RouterOS 6 atau router di belakang NAT tanpa IP publik), atau IP Publik (router punya IP publik sendiri; satu-satunya mode untuk merek selain MikroTik/VyOS).',
+          'Salin skrip apa adanya — sudah termasuk interim accounting 5 menit (wajib, agar status online akurat) dan one-session-per-host (mencegah sesi PPPoE ganda saat pelanggan redial).',
           'Pastikan status menjadi Online. MikroTik dipantau via heartbeat; merek lain via SNMP (skrip SNMP ada di panduan).',
         ],
-        tip: 'RADIUS Secret, CoA Port, dan Heartbeat Token di-generate otomatis — tidak perlu diisi manual.',
+        tip: 'RADIUS Secret, CoA Port, dan Heartbeat Token di-generate otomatis — tidak perlu diisi manual. Router yang sudah lama terpasang cukup jalankan ulang blok "Use RADIUS di PPP" untuk mendapat setelan anti sesi ganda.',
       },
       {
         icon: OltIcon,
@@ -81,12 +90,13 @@ const sections: Section[] = [
       },
       {
         icon: OdpIcon,
-        title: 'ODP',
-        desc: 'Kelola titik distribusi (ODP) beserta kapasitas port-nya.',
+        title: 'ODP & ODC/Splitter',
+        desc: 'Kelola titik distribusi (ODP) beserta kapasitas port-nya. Topologi bisa estafet (langsung ke OLT) atau bercabang lewat ODC/splitter.',
         steps: [
           'Buka Jaringan → ODP → Tambah ODP.',
-          'Pilih OLT induk, isi jumlah port dan koordinat.',
-          'Saat menambah pelanggan FTTH, pilih port ODP yang tersedia.',
+          'Pilih induknya: langsung ke OLT (estafet), atau lewat ODC/Splitter untuk topologi bercabang — tipe bisa diganti kapan saja dari form edit.',
+          'Isi jumlah port dan koordinat; port ODP dibuat otomatis sesuai kapasitas.',
+          'Saat menambah pelanggan FTTH, pilih port ODP yang tersedia — okupansi port tersinkron dua arah dengan data pelanggan.',
         ],
         tip: 'Penggunaan port ditampilkan otomatis (warna berubah saat hampir penuh).',
       },
@@ -108,7 +118,7 @@ const sections: Section[] = [
         steps: [
           'Buka Jaringan → IPAM → buat IP Pool (network, gateway, DNS).',
           'Tautkan pool ke router.',
-          'RADIUS otomatis menetapkan IP ke pelanggan saat login.',
+          'RADIUS otomatis menetapkan IP ke pelanggan saat login, dan melepasnya saat sesi berakhir.',
         ],
       },
       {
@@ -116,10 +126,21 @@ const sections: Section[] = [
         title: 'Monitoring Bandwidth',
         desc: 'Pantau trafik real-time per interface dan konsumsi data pelanggan.',
         steps: [
-          'Buka Jaringan → Konsumsi Data / Monitoring.',
-          'Pilih router & interface untuk melihat grafik real-time.',
+          'Buka Jaringan → Konsumsi Data untuk melihat pemakaian data per pelanggan.',
+          'Grafik trafik per-interface router tampil bila skrip "Monitoring Bandwidth Interface" (ada di panduan konfigurasi router) dipasang — bekerja tanpa VPN.',
           'Limit kecepatan otomatis penuh di MikroTik & Huawei (VyOS perlu aktifkan shaper accel-ppp). Untuk Cisco/Ruijie buat policy-map shaping per paket, Juniper buat CoS/filter per paket — nama sama dengan nama paket (spasi → underscore).',
         ],
+      },
+      {
+        icon: SaturationIcon,
+        title: 'Saturasi Koneksi',
+        desc: 'Deteksi pelanggan yang kecepatannya mentok di batas paket — kandidat terbaik untuk ditawari upgrade.',
+        steps: [
+          'Buka Jaringan → Saturasi Koneksi.',
+          'Sistem merangking pelanggan berdasarkan rasio kecepatan puncak & rata-rata terhadap kecepatan paketnya.',
+          'Saturasi tinggi terus-menerus = paket kekecilan; tindak lanjuti dengan penawaran upgrade.',
+        ],
+        badge: 'Baru',
       },
     ],
   },
@@ -128,7 +149,7 @@ const sections: Section[] = [
     label: 'Administrasi',
     icon: AdminIcon,
     color: '#ef4444',
-    intro: 'Konfigurasi inti operasional ISP: notifikasi WhatsApp, profil tenant, aturan tagihan, dan pembayaran online.',
+    intro: 'Konfigurasi inti operasional ISP: notifikasi WhatsApp, profil tenant, aturan tagihan, pembayaran online, serta akun tim Anda.',
     topics: [
       {
         icon: WaIcon,
@@ -147,8 +168,8 @@ const sections: Section[] = [
         desc: 'Identitas bisnis Anda: nama ISP, logo, kontak, zona waktu, dan mata uang.',
         steps: [
           'Buka Administrasi → Tenant.',
-          'Lengkapi nama, logo, dan informasi kontak.',
-          'Data ini tampil di portal pelanggan, invoice, dan halaman bayar.',
+          'Lengkapi nama, logo, dan informasi kontak — data ini tampil di portal pelanggan, invoice, dan halaman bayar.',
+          'Salin Link Portal Pelanggan dari halaman ini dan bagikan ke pelanggan Anda.',
         ],
       },
       {
@@ -158,7 +179,7 @@ const sections: Section[] = [
         steps: [
           'Buka Administrasi → Tenant → Konfigurasi Billing.',
           'Atur siklus tagihan, tanggal jatuh tempo, hari isolir, dan grace period.',
-          'Pilih jenis billing: tanggal tetap (fixed) atau prorata.',
+          'Pilih model billing: mengikuti tanggal join pelanggan (cycle) atau tanggal tetap serentak (fixed) — perpindahan model dihitung otomatis secara prorata.',
         ],
         tip: 'Invoice, pengingat, dan isolir berjalan otomatis lewat penjadwal harian.',
       },
@@ -173,6 +194,35 @@ const sections: Section[] = [
         ],
         tip: 'Pembayaran online di portal & WhatsApp hanya aktif jika gateway dalam mode produksi.',
       },
+      {
+        icon: RoleIcon,
+        title: 'Pengguna & Role',
+        desc: 'Beri akses panel untuk tim Anda (teknisi, kasir, CS) dengan hak akses yang dibatasi per role.',
+        steps: [
+          'Buka Administrasi → Role → buat role dan centang menu/aksi yang boleh diakses.',
+          'Buka Administrasi → Pengguna → tambah akun untuk anggota tim dan pilih role-nya.',
+          'Menu yang tidak diizinkan otomatis tersembunyi dari akun tersebut.',
+        ],
+      },
+      {
+        icon: UpgradeIcon,
+        title: 'Langganan D Radius',
+        desc: 'Kelola paket langganan Anda pada layanan D Radius: lihat status, batas pelanggan, dan perpanjangan.',
+        steps: [
+          'Buka Administrasi → Langganan.',
+          'Lihat paket aktif, masa berlaku, dan riwayat pembayaran langganan.',
+          'Upgrade paket bila jumlah pelanggan Anda mendekati batas.',
+        ],
+      },
+      {
+        icon: SettingIcon,
+        title: 'Pengaturan',
+        desc: 'Preferensi tampilan aplikasi.',
+        steps: [
+          'Buka Administrasi → Pengaturan.',
+          'Pilih tema terang/gelap dan preferensi tampilan lainnya.',
+        ],
+      },
     ],
   },
   {
@@ -180,18 +230,18 @@ const sections: Section[] = [
     label: 'Pelanggan',
     icon: CustomerIcon,
     color: '#3b82f6',
-    intro: 'Buat paket layanan, lalu daftarkan dan kelola pelanggan beserta tagihannya.',
+    intro: 'Buat paket layanan, daftarkan pelanggan, dan kelola koneksi serta modem mereka.',
     topics: [
       {
         icon: PackageIcon,
         title: 'Paket Internet',
-        desc: 'Definisikan paket layanan: kecepatan, harga, dan opsi burst.',
+        desc: 'Definisikan paket layanan: kecepatan dan harga.',
         steps: [
           'Buka Pelanggan → Paket → Tambah Paket.',
-          'Isi kecepatan upload/download, harga, dan burst limit (opsional).',
+          'Isi kecepatan upload/download dan harga.',
           'Paket dipakai saat mendaftarkan pelanggan dan tampil di portal.',
         ],
-        tip: 'Kecepatan paket otomatis diterapkan ke router via RADIUS saat pelanggan online.',
+        tip: 'Kecepatan diterapkan otomatis via RADIUS saat pelanggan online. Burst dihitung otomatis oleh sistem (125% dari kecepatan paket) — kolom Burst Limit tidak perlu diisi.',
       },
       {
         icon: CustomerIcon,
@@ -201,9 +251,81 @@ const sections: Section[] = [
           'Buka Pelanggan → Daftar Pelanggan → Tambah Pelanggan.',
           'Isi data pribadi, pilih paket, dan tipe koneksi (PPPoE / FTTH / Static).',
           'Untuk FTTH, pilih port ODP dan isi koordinat modem (untuk Peta Jaringan).',
-          'Kelola status: aktif, isolir, atau lihat & catat pembayaran tagihan.',
+          'Kelola status: aktif, isolir, atau lihat & catat pembayaran tagihan dari halaman detail.',
         ],
-        tip: 'Username & password PPPoE dibuat otomatis. Pelanggan bisa bayar online via portal.',
+        tip: 'Username & password PPPoE dibuat otomatis. Pelanggan menunggak diisolir otomatis sesuai aturan billing, dan dibuka lagi begitu lunas.',
+      },
+      {
+        icon: AcsIcon,
+        title: 'Modem / ONT (ACS)',
+        desc: 'Pantau dan kendalikan modem pelanggan dari jauh via TR-069 (GenieACS) — tanpa datang ke lokasi.',
+        steps: [
+          'Arahkan modem/ONT pelanggan ke alamat ACS (tertera di detail pelanggan, bagian Akses).',
+          'Setelah modem lapor, data perangkat muncul otomatis dan tertaut ke pelanggan.',
+          'Dari detail pelanggan Anda bisa melihat status, sinyal/redaman optik, mengubah WiFi, dan me-reboot modem.',
+        ],
+        tip: 'Pelanggan juga bisa mengubah nama & password WiFi sendiri lewat portal — mengurangi tiket "lupa password WiFi".',
+        badge: 'Baru',
+      },
+    ],
+  },
+  {
+    key: 'portal',
+    label: 'Portal Pelanggan',
+    icon: PortalIcon,
+    color: '#06b6d4',
+    intro: 'Portal mandiri untuk pelanggan Anda: cek tagihan, bayar online, ganti paket, kelola WiFi, dan lapor gangguan.',
+    topics: [
+      {
+        icon: AccessIcon,
+        title: 'Akses Portal',
+        desc: 'Setiap tenant punya portal dengan alamat unik yang bisa dibagikan ke seluruh pelanggan.',
+        steps: [
+          'Salin Link Portal dari Administrasi → Tenant, lalu bagikan (mis. via WhatsApp).',
+          'Pelanggan login dengan Nomor Pelanggan + password.',
+          'Lupa password? Pelanggan bisa reset sendiri dengan PIN dari halaman login.',
+        ],
+      },
+      {
+        icon: PaymentIcon,
+        title: 'Tagihan & Bayar Online',
+        desc: 'Pelanggan melihat riwayat tagihan dan membayar sendiri via payment gateway.',
+        steps: [
+          'Menu Tagihan menampilkan invoice berjalan & riwayatnya.',
+          'Tombol Bayar muncul bila payment gateway tenant aktif (mode produksi).',
+          'Pembayaran sukses → status lunas otomatis, isolir langsung terbuka.',
+        ],
+      },
+      {
+        icon: UpgradeIcon,
+        title: 'Ganti Paket',
+        desc: 'Pelanggan bisa upgrade/downgrade paket sendiri dari portal.',
+        steps: [
+          'Menu Paket menampilkan semua paket yang tersedia beserta harga.',
+          'Pelanggan memilih paket baru — selisih biaya dihitung prorata otomatis.',
+          'Kecepatan baru berlaku tanpa perlu ubah apa pun di router.',
+        ],
+        badge: 'Baru',
+      },
+      {
+        icon: OltIcon,
+        title: 'WiFi & Perangkat',
+        desc: 'Pelanggan mengelola modemnya sendiri (butuh modem yang sudah terhubung ACS).',
+        steps: [
+          'Menu Perangkat menampilkan status modem & kualitas sinyal.',
+          'Pelanggan bisa mengubah nama & password WiFi sendiri.',
+          'Tombol Reboot untuk restart modem dari jauh saat koneksi lambat.',
+        ],
+      },
+      {
+        icon: TicketIcon,
+        title: 'Tiket & Referral',
+        desc: 'Pelanggan melapor gangguan dan mengajak tetangga berlangganan.',
+        steps: [
+          'Menu Tiket: pelanggan membuat laporan gangguan dan memantau balasannya.',
+          'Menu Referral: pelanggan membagikan kode unik miliknya.',
+          'Referral yang berhasil tercatat otomatis dan memberi imbalan sesuai program Marketing Anda.',
+        ],
       },
     ],
   },
@@ -259,7 +381,7 @@ const sections: Section[] = [
         title: 'Tiket',
         desc: 'Tangani keluhan dan permintaan pelanggan secara terstruktur.',
         steps: [
-          'Buka Layanan → Tiket untuk melihat tiket masuk.',
+          'Buka Layanan → Tiket untuk melihat tiket masuk (termasuk yang dibuat pelanggan dari portal).',
           'Tetapkan (assign) tiket ke teknisi dan balas pesan pelanggan.',
           'Tutup tiket setelah masalah selesai.',
         ],
@@ -310,7 +432,7 @@ const sections: Section[] = [
         desc: 'Pelanggan mengajak pelanggan baru dan mendapat imbalan.',
         steps: [
           'Buka Marketing → Referral.',
-          'Pelanggan membagikan kode referral mereka.',
+          'Pelanggan membagikan kode referral mereka (tersedia juga di portal pelanggan).',
           'Imbalan otomatis tercatat saat referral berhasil.',
         ],
       },
@@ -332,19 +454,68 @@ const activeKey = ref('jaringan')
 const active = computed(() => sections.find((s) => s.key === activeKey.value) || sections[0])
 function select(key: string) {
   activeKey.value = key
+  searchQuery.value = ''
   // Scroll konten ke atas saat ganti bagian (mobile)
   document.querySelector('.help-content')?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// ── Pencarian topik lintas bagian ───────────────────────────────────────────
+const searchQuery = ref('')
+interface SearchHit { section: Section; topic: Topic }
+const searchHits = computed<SearchHit[]>(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (q.length < 2) return []
+  const hits: SearchHit[] = []
+  for (const s of sections) {
+    for (const t of s.topics) {
+      const haystack = [t.title, t.desc, t.tip || '', ...t.steps].join(' ').toLowerCase()
+      if (haystack.includes(q)) hits.push({ section: s, topic: t })
+    }
+  }
+  return hits
+})
+const isSearching = computed(() => searchQuery.value.trim().length >= 2)
+function openHit(hit: SearchHit) {
+  searchQuery.value = ''
+  activeKey.value = hit.section.key
 }
 </script>
 
 <template>
   <div class="help-page">
     <div class="help-hero">
-      <h1>Panduan Penggunaan</h1>
-      <p>Langkah demi langkah mengelola layanan internet Anda — dari jaringan hingga pelanggan.</p>
+      <div class="hero-text">
+        <h1>Panduan Penggunaan</h1>
+        <p>Langkah demi langkah mengelola layanan internet Anda — dari jaringan hingga pelanggan.</p>
+      </div>
+      <n-input
+        v-model:value="searchQuery"
+        class="hero-search"
+        placeholder="Cari topik… (mis. isolir, WiFi, prorata)"
+        clearable
+        size="large"
+      >
+        <template #prefix><n-icon :component="SearchIcon" :size="18" /></template>
+      </n-input>
     </div>
 
-    <div class="help-layout">
+    <!-- Hasil pencarian -->
+    <div v-if="isSearching" class="search-results">
+      <p class="sr-count">
+        {{ searchHits.length ? `${searchHits.length} topik cocok` : 'Tidak ada topik yang cocok — coba kata kunci lain.' }}
+      </p>
+      <button v-for="hit in searchHits" :key="hit.section.key + hit.topic.title" class="sr-item" @click="openHit(hit)">
+        <span class="sr-icon" :style="{ color: hit.section.color }"><n-icon :component="hit.topic.icon" :size="20" /></span>
+        <span class="sr-body">
+          <span class="sr-title">{{ hit.topic.title }}</span>
+          <span class="sr-desc">{{ hit.topic.desc }}</span>
+        </span>
+        <span class="sr-chip" :style="{ background: hit.section.color + '1a', color: hit.section.color }">{{ hit.section.label }}</span>
+        <n-icon class="hs-chev" :component="ChevIcon" :size="16" />
+      </button>
+    </div>
+
+    <div v-else class="help-layout">
       <!-- Sidebar -->
       <aside class="help-sidebar">
         <button
@@ -382,7 +553,10 @@ function select(key: string) {
             <div class="topic-head">
               <span class="topic-icon" :style="{ color: active.color }"><n-icon :component="t.icon" :size="20" /></span>
               <div>
-                <h3>{{ t.title }}</h3>
+                <h3>
+                  {{ t.title }}
+                  <span v-if="t.badge" class="topic-badge">{{ t.badge }}</span>
+                </h3>
                 <p>{{ t.desc }}</p>
               </div>
             </div>
@@ -415,8 +589,45 @@ function select(key: string) {
 }
 
 /* Hero */
+.help-hero {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
 .help-hero h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.4px; }
 .help-hero p { margin: 4px 0 0; font-size: 14px; opacity: 0.6; line-height: 1.5; }
+.hero-search { max-width: 340px; flex: 1 1 260px; }
+
+/* Hasil pencarian */
+.search-results { display: flex; flex-direction: column; gap: 8px; }
+.sr-count { margin: 0 0 4px; font-size: 13px; opacity: 0.55; }
+.sr-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1.5px solid rgba(128,128,128,0.14);
+  border-radius: 13px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.sr-item:hover { border-color: rgba(128,128,128,0.4); transform: translateY(-1px); }
+.sr-icon { flex-shrink: 0; display: flex; }
+.sr-body { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 2px; }
+.sr-title { font-size: 14px; font-weight: 700; }
+.sr-desc {
+  font-size: 12.5px; opacity: 0.6; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+.sr-chip {
+  flex-shrink: 0;
+  font-size: 11px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px;
+}
 
 /* Layout */
 .help-layout {
@@ -502,8 +713,16 @@ function select(key: string) {
 
 .topic-head { display: flex; align-items: flex-start; gap: 11px; margin-bottom: 14px; }
 .topic-icon { flex-shrink: 0; margin-top: 2px; }
-.topic-head h3 { margin: 0; font-size: 16px; font-weight: 700; }
+.topic-head h3 { margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .topic-head p { margin: 3px 0 0; font-size: 13px; opacity: 0.62; line-height: 1.5; }
+
+.topic-badge {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.3px;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgba(34, 197, 94, 0.14); color: #16a34a;
+  text-transform: uppercase;
+}
+:root.dark .topic-badge { background: rgba(34, 197, 94, 0.18); color: #4ade80; }
 
 .topic-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
 .topic-steps li { display: flex; align-items: flex-start; gap: 10px; }
@@ -539,6 +758,7 @@ function select(key: string) {
   .hs-item { flex: 0 0 auto; min-width: 150px; }
   .hs-chev { display: none; }
   .help-content { max-height: none; overflow: visible; }
+  .hero-search { max-width: none; }
 }
 
 @media (max-width: 480px) {
