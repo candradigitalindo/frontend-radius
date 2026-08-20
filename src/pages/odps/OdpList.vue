@@ -126,19 +126,22 @@ function splitCapacity(t?: string | null): number {
 }
 const selectedOdc = computed(() => splitters.value.find((s: any) => s.id === form.value.splitter_id))
 const odcCapacity = computed(() => splitCapacity(selectedOdc.value?.splitter_type))
+// ODP se-ODC-se-line (selain yang sedang diedit), untuk label opsi & rantai.
+function lineMembers(line: number) {
+  return data.value
+    .filter((o: any) => o.splitter_id === form.value.splitter_id && o.splitter_line === line && o.id !== editId.value)
+    .sort((a: any, b: any) => (a.sequence || 1) - (b.sequence || 1))
+}
 const odcLineOptions = computed(() => {
   const cap = odcCapacity.value
   if (!cap) return []
-  const used = new Map<number, string>()
-  for (const o of data.value) {
-    if (o.splitter_id === form.value.splitter_id && o.splitter_line != null && o.id !== editId.value) {
-      used.set(o.splitter_line, o.name)
-    }
-  }
   return Array.from({ length: cap }, (_, i) => {
     const line = i + 1
-    const takenBy = used.get(line)
-    return { label: `Line ${line}${takenBy ? ' — ' + takenBy : ''}`, value: line, disabled: !!takenBy }
+    const members = lineMembers(line)
+    const label = members.length
+      ? `Line ${line} — rantai ${members.length} ODP (${members.map((m: any) => m.name).join(' → ')})`
+      : `Line ${line} — kosong`
+    return { label, value: line }
   })
 })
 function onOdcChange(val: string | null) {
@@ -258,17 +261,33 @@ async function handleDeleteSplitter(id: string) {
 // Live preview kalkulator
 const selectedPort = computed(() => ponPorts.value.find((p: any) => p.id === form.value.pon_port_id))
 const previewResult = computed(() => {
-  // Mode via-ODC: power awal = SFP root PON port dikurangi loss rantai ODC.
+  // Mode via-ODC: power awal = SFP root PON port dikurangi loss rantai ODC,
+  // lalu dikurangi tap ODP-ODP pendahulu di line yang sama (estafet per line).
   if (odpParentKind.value === 'splitter') {
     const root = odcRoot.value
     if (!root || root.sfp_rx_power == null) return null
+    let currentPower = root.sfp_rx_power - odcChainLoss.value
+    const seq = form.value.sequence || 1
+    if (form.value.splitter_line != null) {
+      const preceding = lineMembers(form.value.splitter_line)
+        .filter((o: any) => (o.sequence || 1) < seq)
+        .map((o: any): OdpCalcInput => ({
+          ratioPercent: o.ratio_percent || 10,
+          splitterType: o.splitter_type || '1:8',
+          installation: { cableLength: o.cable_length_m || 0, pigtailCount: 2, connectorCount: 1, spliceCount: 2 },
+          splitterInstallation: { cableLength: 1, pigtailCount: 2, connectorCount: 2, spliceCount: 2 },
+        }))
+      for (const prev of preceding) {
+        currentPower = calcOdpBudget(currentPower, prev, 0).outputPower
+      }
+    }
     const input: OdpCalcInput = {
       ratioPercent: form.value.ratio_percent,
       splitterType: form.value.splitter_type,
       installation: { cableLength: form.value.cable_length, pigtailCount: form.value.pigtail_count, connectorCount: form.value.connector_count, spliceCount: form.value.splice_count },
       splitterInstallation: { cableLength: form.value.splitter_cable_length, pigtailCount: form.value.splitter_pigtail_count, connectorCount: form.value.splitter_connector_count, spliceCount: form.value.splitter_splice_count },
     }
-    return calcOdpBudget(root.sfp_rx_power - odcChainLoss.value, input, 1)
+    return calcOdpBudget(currentPower, input, seq)
   }
 
   const port = selectedPort.value
@@ -313,7 +332,7 @@ const columns = [
   { title: 'Alamat', key: 'address', render: (r: any) => r.address || '-' },
   { title: 'Total Port', key: 'total_ports', width: 100, align: 'center' as const },
   { title: 'Induk', key: 'olt', render: (r: any) => r.splitter_id
-      ? `ODC: ${r.splitter_name || splitterName(r.splitter_id) || '?'}${r.splitter_line ? ' · Line ' + r.splitter_line : ''}`
+      ? `ODC: ${r.splitter_name || splitterName(r.splitter_id) || '?'}${r.splitter_line ? ' · Line ' + r.splitter_line + ((r.sequence || 1) > 1 ? ' #' + r.sequence : '') : ''}`
       : (r.olt?.name || '-') },
   { title: 'Port OLT', key: 'pon_port_number', render: (r: any) => r.pon_port_number != null ? `PON ${r.pon_port_number}` : '-' },
   { title: 'Splitter Ratio', key: 'splitter_ratio', render: (r: any) => r.splitter_ratio || '-' },
@@ -601,7 +620,8 @@ const filteredData = computed(() => {
             </n-form-item>
           </div>
           <n-text v-if="odpParentKind === 'splitter'" depth="3" style="font-size:12px; display:block; margin: -6px 0 10px">
-            Kelola ODC di bagian "ODC / Splitter" pada halaman ini. Satu line ODC hanya bisa dipakai satu ODP.
+            Kelola ODC di bagian "ODC / Splitter" pada halaman ini. Satu line bisa berisi rantai beberapa ODP
+            (estafet) — atur posisinya dengan "Urutan ODP" dan rasio tap dengan "Rasio (%)"; ODP terakhir pakai rasio 100%.
           </n-text>
           <div class="odp-form-row odp-form-row-3">
             <n-form-item label="Urutan ODP"><n-input-number v-model:value="form.sequence" :min="1" style="width:100%" /></n-form-item>

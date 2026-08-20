@@ -158,11 +158,22 @@ const powerCalc = ref({
 const odcChain = computed(() => (odp.value.splitter_chain || []) as any[])
 const odcChainLoss = computed(() =>
   odcChain.value.reduce((sum: number, s: any) => sum + (SPLITTER_LOSS[s.splitter_type] ?? 0), 0))
-// Power efektif masuk area ODP setelah melewati semua ODC di rantai
+// Power efektif masuk ODP ini: pakai hitungan backend yang sudah berantai per
+// line (line_input_power) bila ada; fallback root SFP dikurangi loss ODC.
 const powerAfterOdc = computed(() => {
   const d = odp.value
+  if (d.line_input_power != null) return d.line_input_power
   if (d.root_sfp_rx_power == null) return null
   return d.root_sfp_rx_power - odcChainLoss.value
+})
+// Rantai ODP se-line (dari backend), untuk baris "Rantai di Line".
+const lineChainLabel = computed(() => {
+  const d = odp.value
+  const chain = (d.line_chain || []) as any[]
+  if (!chain.length) return ''
+  return chain
+    .map((o: any) => `${o.name}${o.id === d.id ? ' (ODP ini)' : ''} — ${o.ratio_percent ? o.ratio_percent + '%' : 'sisa'}`)
+    .join(' → ')
 })
 const chainPath = computed(() => {
   const d = odp.value
@@ -292,6 +303,7 @@ const budgetResult = computed(() => {
         </n-descriptions-item>
         <n-descriptions-item label="Splitter Ratio">{{ odp.splitter_ratio || '-' }}</n-descriptions-item>
         <n-descriptions-item v-if="chainPath" label="Jalur ke OLT" :span="isMobile ? 1 : 2">{{ chainPath }}</n-descriptions-item>
+        <n-descriptions-item v-if="lineChainLabel" :label="`Rantai Line ${odp.splitter_line}`" :span="isMobile ? 1 : 2">{{ lineChainLabel }}</n-descriptions-item>
         <n-descriptions-item label="Total Port">{{ odp.total_ports }}</n-descriptions-item>
         <n-descriptions-item label="Okupansi">{{ occupancy }}%</n-descriptions-item>
         <n-descriptions-item label="Latitude">{{ odp.latitude ?? '-' }}</n-descriptions-item>
