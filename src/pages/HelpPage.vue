@@ -91,14 +91,16 @@ const sections: Section[] = [
       {
         icon: OdpIcon,
         title: 'ODP & ODC/Splitter',
-        desc: 'Kelola titik distribusi (ODP) beserta kapasitas port-nya. Topologi bisa estafet (langsung ke OLT) atau bercabang lewat ODC/splitter.',
+        desc: 'Kelola titik distribusi (ODP) dan ODC/splitter dengan topologi bebas: estafet langsung ke OLT, bercabang lewat ODC, atau ODC bertingkat — contoh: ODC 1:4 yang tiap line-nya diteruskan ke ODP 1:8.',
         steps: [
-          'Buka Jaringan → ODP → Tambah ODP.',
-          'Pilih induknya: langsung ke OLT (estafet), atau lewat ODC/Splitter untuk topologi bercabang — tipe bisa diganti kapan saja dari form edit.',
-          'Isi jumlah port dan koordinat; port ODP dibuat otomatis sesuai kapasitas.',
-          'Saat menambah pelanggan FTTH, pilih port ODP yang tersedia — okupansi port tersinkron dua arah dengan data pelanggan.',
+          'Buat ODC di Jaringan → ODP → bagian "ODC / Splitter": pilih rasio (1:2 s/d 1:64) dan induknya — PON port OLT, atau ODC lain untuk topologi bertingkat.',
+          'Tambah ODP dan pilih induknya: langsung ke OLT (estafet) atau lewat ODC. Untuk ODP via ODC, pilih juga Line Keluaran ODC — satu line hanya bisa dipakai satu ODP, line yang terpakai otomatis terkunci.',
+          'Kapasitas dijaga otomatis: sistem menolak cabang yang melebihi rasio ODC (mis. ODC 1:4 maksimal 4 cabang) dan mencegah induk melingkar.',
+          'Isi jumlah port dan koordinat; port ODP dibuat otomatis, dan okupansinya tersinkron dua arah dengan data pelanggan FTTH.',
+          'Buka detail ODP untuk melihat Jalur ke OLT lengkap (OLT → ODC → ODP + line) — kalkulator Link Budget menghitung redaman otomatis menembus rantai ODC.',
         ],
-        tip: 'Penggunaan port ditampilkan otomatis (warna berubah saat hampir penuh).',
+        tip: 'Kartu ODC menampilkan "Cabang Terpakai x / N" sesuai rasionya, dan penggunaan port ODP berubah warna saat hampir penuh.',
+        badge: 'Update',
       },
       {
         icon: MapIcon,
