@@ -153,9 +153,31 @@ const powerCalc = ref({
   splitterType: '1:8' as string,
 })
 
+// ─── Rantai ODC (via splitter) ──────
+// splitter_chain: indeks 0 = ODC induk langsung, terakhir = root di PON port.
+const odcChain = computed(() => (odp.value.splitter_chain || []) as any[])
+const odcChainLoss = computed(() =>
+  odcChain.value.reduce((sum: number, s: any) => sum + (SPLITTER_LOSS[s.splitter_type] ?? 0), 0))
+// Power efektif masuk area ODP setelah melewati semua ODC di rantai
+const powerAfterOdc = computed(() => {
+  const d = odp.value
+  if (d.root_sfp_rx_power == null) return null
+  return d.root_sfp_rx_power - odcChainLoss.value
+})
+const chainPath = computed(() => {
+  const d = odp.value
+  if (!odcChain.value.length) return ''
+  const parts: string[] = []
+  if (d.root_olt_name) parts.push(`${d.root_olt_name}${d.root_pon_port_number != null ? ' (PON ' + d.root_pon_port_number + ')' : ''}`)
+  for (const s of [...odcChain.value].reverse()) parts.push(`${s.name} (${s.splitter_type})`)
+  parts.push(`${d.name}${d.splitter_line ? ' · Line ' + d.splitter_line : ''}`)
+  return parts.join(' → ')
+})
+
 function initPowerCalcFromOdp() {
   const d = odp.value
   if (d.pon_port_sfp_rx_power != null) powerCalc.value.oltPower = d.pon_port_sfp_rx_power
+  else if (powerAfterOdc.value != null) powerCalc.value.oltPower = Math.round(powerAfterOdc.value * 100) / 100
   if (d.cable_length != null) powerCalc.value.cableLength = d.cable_length
   if (d.pigtail_count != null) powerCalc.value.pigtailCount = d.pigtail_count
   if (d.connector_count != null) powerCalc.value.connectorCount = d.connector_count
@@ -192,10 +214,14 @@ const powerCalcResult = computed(() => {
   }
 })
 
-// Link Budget Calculator
+// Link Budget Calculator — mode estafet pakai SFP PON port langsung;
+// mode via-ODC pakai power root dikurangi loss rantai ODC.
 const budgetResult = computed(() => {
   const d = odp.value
-  if (!d.pon_port_sfp_rx_power && d.pon_port_sfp_rx_power !== 0) return null
+  let startPower: number | null = null
+  if (d.pon_port_sfp_rx_power != null) startPower = d.pon_port_sfp_rx_power
+  else if (powerAfterOdc.value != null) startPower = powerAfterOdc.value
+  if (startPower == null) return null
   const input: OdpCalcInput = {
     ratioPercent: d.ratio_percent || 10,
     splitterType: d.splitter_type || '1:8',
@@ -212,7 +238,7 @@ const budgetResult = computed(() => {
       spliceCount: d.splitter_splice_count ?? 2,
     },
   }
-  return calcOdpBudget(d.pon_port_sfp_rx_power, input, d.sequence || 1)
+  return calcOdpBudget(startPower, input, d.sequence || 1)
 })
 </script>
 
@@ -225,6 +251,9 @@ const budgetResult = computed(() => {
           <n-button text @click="router.push('/odps')">← ODP</n-button>
           <span class="detail-name">{{ odp.name }}</span>
           <n-tag v-if="odp.olt" type="info" size="small">OLT: {{ odp.olt.name }}</n-tag>
+          <n-tag v-else-if="odp.splitter_name" type="info" size="small">
+            ODC: {{ odp.splitter_name }}{{ odp.splitter_line ? ' · Line ' + odp.splitter_line : '' }}
+          </n-tag>
           <n-tag v-if="odp.splitter_ratio" type="default" size="small">Splitter: {{ odp.splitter_ratio }}</n-tag>
         </div>
       </template>
@@ -255,8 +284,14 @@ const budgetResult = computed(() => {
       <n-descriptions :label-placement="isMobile ? 'top' : 'left'" bordered :column="isMobile ? 1 : 2">
         <n-descriptions-item label="Nama">{{ odp.name }}</n-descriptions-item>
         <n-descriptions-item label="Alamat">{{ odp.address || '-' }}</n-descriptions-item>
-        <n-descriptions-item label="OLT">{{ odp.olt?.name || '-' }}</n-descriptions-item>
+        <n-descriptions-item label="Induk">
+          <template v-if="odp.splitter_name">
+            ODC: {{ odp.splitter_name }}{{ odp.splitter_line ? ' · Line ' + odp.splitter_line : '' }}
+          </template>
+          <template v-else>{{ odp.olt?.name || '-' }}</template>
+        </n-descriptions-item>
         <n-descriptions-item label="Splitter Ratio">{{ odp.splitter_ratio || '-' }}</n-descriptions-item>
+        <n-descriptions-item v-if="chainPath" label="Jalur ke OLT" :span="isMobile ? 1 : 2">{{ chainPath }}</n-descriptions-item>
         <n-descriptions-item label="Total Port">{{ odp.total_ports }}</n-descriptions-item>
         <n-descriptions-item label="Okupansi">{{ occupancy }}%</n-descriptions-item>
         <n-descriptions-item label="Latitude">{{ odp.latitude ?? '-' }}</n-descriptions-item>

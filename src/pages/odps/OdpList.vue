@@ -37,7 +37,7 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 const form = ref({
   name: '', address: '', latitude: 0, longitude: 0, total_ports: 8,
   olt_id: null as string | null, splitter_ratio: '', notes: '', status: 'draft' as string,
-  pon_port_id: null as string | null, splitter_id: null as string | null, sequence: 1,
+  pon_port_id: null as string | null, splitter_id: null as string | null, splitter_line: null as number | null, sequence: 1,
   cable_length: 0, pigtail_count: 2, connector_count: 1, splice_count: 2,
   splitter_type: '1:8', ratio_percent: 10,
   splitter_cable_length: 1, splitter_pigtail_count: 2, splitter_connector_count: 2, splitter_splice_count: 2,
@@ -57,7 +57,7 @@ function resetForm() {
   form.value = {
     name: '', address: '', latitude: 0, longitude: 0, total_ports: 8,
     olt_id: null, splitter_ratio: '', notes: '', status: 'draft',
-    pon_port_id: null, splitter_id: null, sequence: 1,
+    pon_port_id: null, splitter_id: null, splitter_line: null, sequence: 1,
     cable_length: 0, pigtail_count: 2, connector_count: 1, splice_count: 2,
     splitter_type: '1:8', ratio_percent: 10,
     splitter_cable_length: 1, splitter_pigtail_count: 2, splitter_connector_count: 2, splitter_splice_count: 2,
@@ -119,6 +119,48 @@ function splitterName(id: string | null) {
   return s ? s.name : null
 }
 
+// ── ODC terpilih di form ODP: kapasitas & line keluaran ──
+function splitCapacity(t?: string | null): number {
+  const m = /^1:(\d+)$/.exec((t || '').trim())
+  return m ? Number(m[1]) : 0
+}
+const selectedOdc = computed(() => splitters.value.find((s: any) => s.id === form.value.splitter_id))
+const odcCapacity = computed(() => splitCapacity(selectedOdc.value?.splitter_type))
+const odcLineOptions = computed(() => {
+  const cap = odcCapacity.value
+  if (!cap) return []
+  const used = new Map<number, string>()
+  for (const o of data.value) {
+    if (o.splitter_id === form.value.splitter_id && o.splitter_line != null && o.id !== editId.value) {
+      used.set(o.splitter_line, o.name)
+    }
+  }
+  return Array.from({ length: cap }, (_, i) => {
+    const line = i + 1
+    const takenBy = used.get(line)
+    return { label: `Line ${line}${takenBy ? ' — ' + takenBy : ''}`, value: line, disabled: !!takenBy }
+  })
+})
+function onOdcChange(val: string | null) {
+  form.value.splitter_id = val
+  form.value.splitter_line = null
+}
+
+// Rantai ODC terpilih sampai root (untuk link budget via ODC)
+const odcChain = computed(() => {
+  const out: any[] = []
+  let cur: any = selectedOdc.value
+  let hops = 0
+  while (cur && hops++ < 32) {
+    out.push(cur)
+    cur = cur.parent_splitter_id ? splitters.value.find((s: any) => s.id === cur.parent_splitter_id) : null
+  }
+  return out
+})
+const odcRoot = computed(() => (odcChain.value.length ? odcChain.value[odcChain.value.length - 1] : null))
+const odcChainLoss = computed(() =>
+  odcChain.value.reduce((sum: number, s: any) => sum + (SPLITTER_LOSS[s.splitter_type] ?? 0), 0))
+
 const splitterPonPorts = ref<any[]>([])
 const splitterPonPortOptions = computed(() => splitterPonPorts.value.map((p: any) => ({
   label: `Port ${p.port_number}${p.description ? ' - ' + p.description : ''}`,
@@ -160,7 +202,17 @@ async function openSplitterEdit(s: any) {
     notes: s.notes || '',
   }
   showSplitterModal.value = true
-  // Temukan OLT pemilik pon_port agar dropdown terisi saat edit
+  // OLT pemilik pon_port kini dikirim backend (olt_id) — fallback brute force
+  // hanya untuk data yang belum ter-enrich.
+  if (s.pon_port_id && s.olt_id) {
+    try {
+      const { data: res } = await oltApi.ponPorts(s.olt_id)
+      splitterPonPorts.value = res.data || []
+      splitterForm.value.olt_id = s.olt_id
+      splitterForm.value.pon_port_id = s.pon_port_id
+      return
+    } catch { /* jatuh ke brute force */ }
+  }
   if (s.pon_port_id) {
     for (const olt of olts.value) {
       try {
@@ -206,6 +258,19 @@ async function handleDeleteSplitter(id: string) {
 // Live preview kalkulator
 const selectedPort = computed(() => ponPorts.value.find((p: any) => p.id === form.value.pon_port_id))
 const previewResult = computed(() => {
+  // Mode via-ODC: power awal = SFP root PON port dikurangi loss rantai ODC.
+  if (odpParentKind.value === 'splitter') {
+    const root = odcRoot.value
+    if (!root || root.sfp_rx_power == null) return null
+    const input: OdpCalcInput = {
+      ratioPercent: form.value.ratio_percent,
+      splitterType: form.value.splitter_type,
+      installation: { cableLength: form.value.cable_length, pigtailCount: form.value.pigtail_count, connectorCount: form.value.connector_count, spliceCount: form.value.splice_count },
+      splitterInstallation: { cableLength: form.value.splitter_cable_length, pigtailCount: form.value.splitter_pigtail_count, connectorCount: form.value.splitter_connector_count, spliceCount: form.value.splitter_splice_count },
+    }
+    return calcOdpBudget(root.sfp_rx_power - odcChainLoss.value, input, 1)
+  }
+
   const port = selectedPort.value
   if (!port || port.sfp_rx_power == null) return null
 
@@ -247,7 +312,9 @@ const columns = [
     render: (r: any) => h(NTag, { size: 'small', type: r.status === 'ready' ? 'success' : 'default', bordered: false }, () => r.status === 'ready' ? 'Ready' : 'Draft') },
   { title: 'Alamat', key: 'address', render: (r: any) => r.address || '-' },
   { title: 'Total Port', key: 'total_ports', width: 100, align: 'center' as const },
-  { title: 'Induk', key: 'olt', render: (r: any) => r.splitter_id ? `ODC: ${splitterName(r.splitter_id) || '?'}` : (r.olt?.name || '-') },
+  { title: 'Induk', key: 'olt', render: (r: any) => r.splitter_id
+      ? `ODC: ${r.splitter_name || splitterName(r.splitter_id) || '?'}${r.splitter_line ? ' · Line ' + r.splitter_line : ''}`
+      : (r.olt?.name || '-') },
   { title: 'Port OLT', key: 'pon_port_number', render: (r: any) => r.pon_port_number != null ? `PON ${r.pon_port_number}` : '-' },
   { title: 'Splitter Ratio', key: 'splitter_ratio', render: (r: any) => r.splitter_ratio || '-' },
   {
@@ -265,7 +332,7 @@ function openEdit(r: any) {
   form.value = {
     name: r.name, address: r.address || '', latitude: r.latitude, longitude: r.longitude,
     total_ports: r.total_ports, olt_id: r.olt_id, splitter_ratio: r.splitter_ratio || '', notes: r.notes || '', status: r.status || 'draft',
-    pon_port_id: r.pon_port_id || null, splitter_id: r.splitter_id || null, sequence: r.sequence || 1,
+    pon_port_id: r.pon_port_id || null, splitter_id: r.splitter_id || null, splitter_line: r.splitter_line ?? null, sequence: r.sequence || 1,
     cable_length: r.cable_length || 0, pigtail_count: r.pigtail_count ?? 2, connector_count: r.connector_count ?? 1, splice_count: r.splice_count ?? 2,
     splitter_type: r.splitter_type || '1:8', ratio_percent: r.ratio_percent || 10,
     splitter_cable_length: r.splitter_cable_length ?? 1, splitter_pigtail_count: r.splitter_pigtail_count ?? 2, splitter_connector_count: r.splitter_connector_count ?? 2, splitter_splice_count: r.splitter_splice_count ?? 2,
@@ -284,6 +351,7 @@ async function handleSave() {
       ...form.value,
       // Induk eksklusif: lewat ODC/splitter ATAU langsung OLT
       splitter_id: viaOdc ? form.value.splitter_id : null,
+      splitter_line: viaOdc ? form.value.splitter_line : null,
       olt_id: viaOdc ? null : form.value.olt_id,
       pon_port_id: viaOdc ? null : form.value.pon_port_id,
       address: form.value.address || undefined,
@@ -382,7 +450,7 @@ const filteredData = computed(() => {
               </div>
               <div class="odp-card-row" v-if="r.splitter_id">
                 <span class="odp-label">ODC</span>
-                <n-tag size="small" type="info">{{ splitterName(r.splitter_id) || '?' }}</n-tag>
+                <n-tag size="small" type="info">{{ (r.splitter_name || splitterName(r.splitter_id) || '?') + (r.splitter_line ? ' · Line ' + r.splitter_line : '') }}</n-tag>
               </div>
               <div class="odp-card-row" v-else-if="r.olt">
                 <span class="odp-label">OLT</span>
@@ -433,11 +501,13 @@ const filteredData = computed(() => {
           <div class="odp-card-body">
             <div class="odp-card-row">
               <span class="odp-label">Induk</span>
-              <span>{{ s.parent_splitter_id ? ('ODC: ' + (splitterName(s.parent_splitter_id) || '?')) : (s.pon_port_id ? 'OLT (PON Port)' : '-') }}</span>
+              <span>{{ s.parent_splitter_id ? ('ODC: ' + (splitterName(s.parent_splitter_id) || '?')) : (s.olt_name ? `OLT: ${s.olt_name} · PON ${s.pon_port_number}` : (s.pon_port_id ? 'OLT (PON Port)' : '-')) }}</span>
             </div>
             <div class="odp-card-row">
-              <span class="odp-label">ODP Terhubung</span>
-              <span>{{ data.filter((o: any) => o.splitter_id === s.id).length }}</span>
+              <span class="odp-label">Cabang Terpakai</span>
+              <span>
+                {{ data.filter((o: any) => o.splitter_id === s.id).length + splitters.filter((x: any) => x.parent_splitter_id === s.id).length }}{{ splitCapacity(s.splitter_type) ? ' / ' + splitCapacity(s.splitter_type) : '' }}
+              </span>
             </div>
             <div v-if="s.notes" class="odp-card-row">
               <span class="odp-label">Catatan</span>
@@ -523,12 +593,16 @@ const filteredData = computed(() => {
           </div>
           <div v-else class="odp-form-row">
             <n-form-item label="ODC / Splitter">
-              <n-select v-model:value="form.splitter_id" :options="splitterSelectOptions" clearable filterable placeholder="Pilih ODC/Splitter" />
+              <n-select :value="form.splitter_id" @update:value="onOdcChange" :options="splitterSelectOptions" clearable filterable placeholder="Pilih ODC/Splitter" />
             </n-form-item>
-            <n-form-item label=" ">
-              <n-text depth="3" style="font-size:12px">Kelola ODC di bagian "ODC / Splitter" pada halaman ini</n-text>
+            <n-form-item label="Line Keluaran ODC">
+              <n-select v-if="odcCapacity" v-model:value="form.splitter_line" :options="odcLineOptions" clearable placeholder="Opsional — pilih line" />
+              <n-select v-else disabled :placeholder="form.splitter_id ? 'Tipe ODC tidak dikenal' : 'Pilih ODC dulu'" />
             </n-form-item>
           </div>
+          <n-text v-if="odpParentKind === 'splitter'" depth="3" style="font-size:12px; display:block; margin: -6px 0 10px">
+            Kelola ODC di bagian "ODC / Splitter" pada halaman ini. Satu line ODC hanya bisa dipakai satu ODP.
+          </n-text>
           <div class="odp-form-row odp-form-row-3">
             <n-form-item label="Urutan ODP"><n-input-number v-model:value="form.sequence" :min="1" style="width:100%" /></n-form-item>
             <n-form-item label="Rasio (%)"><n-select v-model:value="form.ratio_percent" :options="ratioOptions" /></n-form-item>
@@ -576,8 +650,18 @@ const filteredData = computed(() => {
 
             <!-- Details -->
             <div class="calc-details">
+              <template v-if="odpParentKind === 'splitter' && odcRoot">
+                <div class="calc-row">
+                  <span>Power OLT (root)</span>
+                  <span>{{ odcRoot.sfp_rx_power?.toFixed(2) }} dBm</span>
+                </div>
+                <div class="calc-row">
+                  <span>Loss rantai ODC ({{ odcChain.map((s: any) => s.splitter_type).join(' → ') }})</span>
+                  <span class="calc-loss">-{{ odcChainLoss.toFixed(2) }} dB</span>
+                </div>
+              </template>
               <div class="calc-row">
-                <span>Power OLT</span>
+                <span>{{ odpParentKind === 'splitter' ? 'Power Masuk ODP' : 'Power OLT' }}</span>
                 <span>{{ previewResult.inputPower.toFixed(2) }} dBm</span>
               </div>
               <div class="calc-row">
@@ -612,7 +696,10 @@ const filteredData = computed(() => {
           <template v-else>
             <div class="calc-empty">
               <n-icon size="32" style="opacity: 0.3"><AlertCircleIcon /></n-icon>
-              <span>Pilih OLT & PON Port<br>untuk melihat kalkulasi</span>
+              <span v-if="odpParentKind === 'splitter'">
+                {{ form.splitter_id ? 'Rantai ODC belum terhubung ke PON port dengan data SFP power' : 'Pilih ODC untuk melihat kalkulasi' }}
+              </span>
+              <span v-else>Pilih OLT & PON Port<br>untuk melihat kalkulasi</span>
             </div>
           </template>
         </div>
