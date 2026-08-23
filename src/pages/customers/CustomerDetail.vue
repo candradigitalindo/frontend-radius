@@ -269,6 +269,27 @@ async function handleRebootOnt() {
   })
 }
 
+// Lepas ONT dari pelanggan (skenario ganti perangkat fisik).
+async function handleUnlinkOnt() {
+  if (!customer.value.ont?.id) return
+  dialog.warning({
+    title: 'Lepas ONT',
+    content: `ONT ${customer.value.ont.serial_number || ''} akan dilepas dari pelanggan ini. ONT pengganti yang online memakai PPPoE pelanggan ini akan terhubung otomatis dalam beberapa menit. Lanjutkan?`,
+    positiveText: 'Lepas ONT',
+    negativeText: 'Batal',
+    onPositiveClick: async () => {
+      try {
+        await ontApi.unlink(customer.value.ont.id)
+        message.success('ONT dilepas — ONT pengganti akan terhubung otomatis saat online')
+        showOntModal.value = false
+        fetchData()
+      } catch (e: any) {
+        message.error(e.response?.data?.error || 'Gagal melepas ONT')
+      }
+    },
+  })
+}
+
 const nowTick = ref(Date.now())
 const isMobile = ref(window.innerWidth < 640)
 function onResize() { isMobile.value = window.innerWidth < 640 }
@@ -662,6 +683,7 @@ onUnmounted(() => { if (tickTimer) clearInterval(tickTimer) })
             <n-space vertical style="margin-top: 24px">
               <n-button secondary block @click="handleRebootOnt">Reboot Device</n-button>
               <n-button secondary block type="info" @click="fetchOntStatus(true)">Refresh Data</n-button>
+              <n-button secondary block type="error" @click="handleUnlinkOnt">Lepas ONT (Ganti Perangkat)</n-button>
             </n-space>
           </n-grid-item>
         </n-grid>

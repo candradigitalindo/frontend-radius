@@ -6,6 +6,7 @@ export const ontApi = {
   create: (data: Record<string, any>) => http.post('/onts', data),
   update: (id: string, data: Record<string, any>) => http.put(`/onts/${id}`, data),
   delete: (id: string) => http.delete(`/onts/${id}`),
+  unlink: (id: string) => http.post(`/onts/${id}/unlink`),
   sync: (id: string) => http.post(`/onts/${id}/sync`),
   reboot: (id: string) => http.post(`/onts/${id}/reboot`),
   provision: (id: string) => http.post(`/onts/${id}/provision`),

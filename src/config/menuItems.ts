@@ -31,6 +31,7 @@ import {
   MegaphoneOutline as MarketingIcon,
   BuildOutline as AdminIcon,
   MapOutline as MapIcon,
+  CloudOutline as OntIcon,
 } from '@vicons/ionicons5'
 import { BookOutline as GuideIcon } from '@vicons/ionicons5'
 
@@ -72,6 +73,7 @@ export const allMenuItems: MenuOption[] = [
       { label: 'Router', key: 'routers', icon: ri(RouterIcon) },
       { label: 'OLT', key: 'olts', icon: ri(OltIcon) },
       { label: 'ODP', key: 'odps', icon: ri(OdpIcon) },
+      { label: 'ONT (ACS)', key: 'onts', icon: ri(OntIcon) },
       { label: 'Peta Jaringan', key: 'network-map', icon: ri(MapIcon) },
       { label: 'IPAM', key: 'ip-pools', icon: ri(IpamIcon) },
       { label: 'Konsumsi Data', key: 'bandwidth', icon: ri(BandwidthIcon) },
