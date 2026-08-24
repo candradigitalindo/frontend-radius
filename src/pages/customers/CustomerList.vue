@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, h, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { NCard, NDataTable, NButton, NInput, NPopconfirm, NIcon, NSpin, useMessage, useDialog } from 'naive-ui'
+import { NCard, NDataTable, NButton, NInput, NPopconfirm, NIcon, NSpin, NDrawer, NDrawerContent, useMessage, useDialog } from 'naive-ui'
 import { Search, Plus, ChevronLeft, ChevronRight } from '@vicons/tabler'
 import type { DataTableColumns } from 'naive-ui'
 import { customerApi } from '../../api'
@@ -25,20 +25,112 @@ const totalPages = computed(() => Math.ceil(total.value / pageSize.value) || 1)
 const countActive = ref(0)
 const countIsolated = ref(0)
 const countOnline = ref(0)
+const countOffline = ref(0)
 
 async function fetchStats() {
   try {
-    const { data: res } = await customerApi.list({ per_page: 9999 })
-    const all: any[] = res.data || []
-    countActive.value = all.filter(r => r.status === 'active').length
-    countIsolated.value = all.filter(r => r.status === 'isolated').length
-    countOnline.value = all.filter(r => r.connection_status === 'online').length
+    const { data: s } = await customerApi.stats()
+    countActive.value = s.active || 0
+    countIsolated.value = s.isolated || 0
+    countOnline.value = s.online || 0
+    countOffline.value = s.offline || 0
   } catch {
     // fallback: hitung dari data halaman saat ini
     countActive.value = data.value.filter(r => r.status === 'active').length
     countIsolated.value = data.value.filter(r => r.status === 'isolated').length
     countOnline.value = data.value.filter(r => r.connection_status === 'online').length
+    countOffline.value = data.value.filter(r => r.connection_status === 'offline').length
   }
+}
+
+// ── Filter status via tombol strip (usulan tenant): klik untuk menyaring,
+// klik lagi untuk kembali ke semua. ──
+type StatusFilter = '' | 'active' | 'online' | 'offline' | 'isolated'
+const statusFilter = ref<StatusFilter>('')
+function toggleFilter(key: StatusFilter) {
+  statusFilter.value = statusFilter.value === key ? '' : key
+  page.value = 1
+  fetchData()
+}
+function filterParams(): Record<string, any> {
+  switch (statusFilter.value) {
+    case 'active': return { status: 'active' }
+    case 'isolated': return { status: 'isolated' }
+    case 'online': return { connection: 'online' }
+    case 'offline': return { connection: 'offline' }
+    default: return {}
+  }
+}
+
+// ── Panel Detail Pelanggan (quick view samping, usulan tenant) ──
+const showDrawer = ref(false)
+const drawerLoading = ref(false)
+const det = ref<any>(null)
+async function openQuickView(row: any) {
+  showDrawer.value = true
+  drawerLoading.value = true
+  det.value = null
+  try {
+    const { data: res } = await customerApi.get(row.id)
+    det.value = res.data || res
+  } catch { message.error('Gagal memuat detail pelanggan') }
+  drawerLoading.value = false
+}
+function fmtDate(d?: string | null) {
+  if (!d) return '-'
+  return new Date(d).toLocaleString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function fmtUptime(startedAt?: string | null) {
+  if (!startedAt) return '-'
+  let s = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000))
+  const d = Math.floor(s / 86400); s -= d * 86400
+  const h = Math.floor(s / 3600); s -= h * 3600
+  const m = Math.floor(s / 60)
+  const parts: string[] = []
+  if (d) parts.push(`${d} hari`)
+  if (h) parts.push(`${h} jam`)
+  parts.push(`${m} menit`)
+  return parts.join(' ')
+}
+function dueInfo(): string {
+  const due = det.value?.billing?.billing_due_date
+  if (!due) return '-'
+  const days = Math.ceil((new Date(due).getTime() - Date.now()) / 86400000)
+  const dateStr = new Date(due).toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  return days >= 0 ? `${dateStr} (${days} hari lagi)` : `${dateStr} (lewat ${-days} hari)`
+}
+const detMac = computed(() => det.value?.connection?.active_session?.caller_id || det.value?.ont?.network?.mac_address || '-')
+const detLastSeen = computed(() => {
+  const c = det.value?.connection
+  if (!c) return '-'
+  if (c.status === 'online') return 'Sedang online'
+  return fmtDate(c.active_session?.ended_at || c.active_session?.updated_at || det.value?.ont?.last_online_at)
+})
+async function drawerIsolate() {
+  if (!det.value) return
+  handleIsolate({ id: det.value.id, name: det.value.name })
+}
+async function drawerActivate() {
+  if (!det.value) return
+  try {
+    await customerApi.activate(det.value.id)
+    message.success('Pelanggan berhasil diaktifkan')
+    fetchData(); fetchStats(); openQuickView({ id: det.value.id })
+  } catch { message.error('Gagal mengaktifkan pelanggan') }
+}
+function drawerDelete() {
+  if (!det.value) return
+  const id = det.value.id
+  dialog.error({
+    title: 'Hapus Pelanggan',
+    content: `Yakin hapus ${det.value.name}? Data pelanggan akan dihapus permanen.`,
+    positiveText: 'Hapus',
+    negativeText: 'Batal',
+    onPositiveClick: async () => {
+      showDrawer.value = false
+      await handleDelete(id)
+    },
+  })
 }
 
 const statusMap: Record<string, { label: string; color: string; bg: string }> = {
@@ -131,7 +223,7 @@ const columns: DataTableColumns<any> = [
       h(NButton, {
         size: 'small', quaternary: true, type: 'info', title: 'Detail',
         style: 'padding:0 6px;min-width:28px',
-        onClick: (e: MouseEvent) => { e.stopPropagation(); router.push(`/customers/${row.id}`) },
+        onClick: (e: MouseEvent) => { e.stopPropagation(); openQuickView(row) },
       }, { default: () => h('span', { innerHTML: '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' }) }),
       row.status === 'active'
         ? h(NButton, {
@@ -159,7 +251,11 @@ const columns: DataTableColumns<any> = [
 async function fetchData() {
   loading.value = true
   try {
-    const { data: res } = await customerApi.list({ page: page.value, per_page: pageSize.value, search: search.value || undefined })
+    const { data: res } = await customerApi.list({
+      page: page.value, per_page: pageSize.value,
+      search: search.value || undefined,
+      ...filterParams(),
+    })
     data.value = res.data || []
     total.value = res.total || res.meta?.total || data.value.length
   } catch { message.error('Gagal memuat data pelanggan') }
@@ -173,8 +269,12 @@ async function handleIsolate(row: any) {
     positiveText: 'Ya, Isolir',
     negativeText: 'Batal',
     onPositiveClick: async () => {
-      try { await customerApi.isolate(row.id); message.success('Pelanggan berhasil diisolir'); fetchData(); fetchStats() }
-      catch { message.error('Gagal mengisolir pelanggan') }
+      try {
+        await customerApi.isolate(row.id)
+        message.success('Pelanggan berhasil diisolir')
+        fetchData(); fetchStats()
+        if (showDrawer.value && det.value?.id === row.id) openQuickView(row)
+      } catch { message.error('Gagal mengisolir pelanggan') }
     },
   })
 }
@@ -227,22 +327,31 @@ onMounted(() => { fetchData(); fetchStats() })
       </div>
     </div>
 
-    <!-- Stats strip -->
+    <!-- Stats strip: tombol filter status (klik untuk saring, klik lagi untuk semua) -->
     <div class="stats-strip">
-      <div class="stat-item">
+      <button class="stat-item stat-btn" :class="{ selected: statusFilter === 'active' }" title="Tampilkan hanya pelanggan aktif" @click="toggleFilter('active')">
         <span class="stat-val">{{ countActive }}</span>
         <span class="stat-lbl">Aktif</span>
-      </div>
+      </button>
       <div class="stat-divider" />
-      <div class="stat-item">
+      <button class="stat-item stat-btn" :class="{ selected: statusFilter === 'online' }" title="Tampilkan hanya pelanggan online" @click="toggleFilter('online')">
         <span class="stat-val online">{{ countOnline }}</span>
         <span class="stat-lbl">Online</span>
-      </div>
+      </button>
       <div class="stat-divider" />
-      <div class="stat-item">
+      <button class="stat-item stat-btn" :class="{ selected: statusFilter === 'offline' }" title="Tampilkan hanya pelanggan offline" @click="toggleFilter('offline')">
+        <span class="stat-val danger">{{ countOffline }}</span>
+        <span class="stat-lbl">Offline</span>
+      </button>
+      <div class="stat-divider" />
+      <button class="stat-item stat-btn" :class="{ selected: statusFilter === 'isolated' }" title="Tampilkan hanya pelanggan isolir" @click="toggleFilter('isolated')">
         <span class="stat-val warn">{{ countIsolated }}</span>
-        <span class="stat-lbl">Diisolir</span>
-      </div>
+        <span class="stat-lbl">Isolir</span>
+      </button>
+      <template v-if="statusFilter">
+        <div class="stat-divider" />
+        <button class="stat-item stat-btn stat-reset" title="Hapus filter" @click="toggleFilter(statusFilter)">✕ Semua</button>
+      </template>
     </div>
 
     <!-- Desktop Table -->
@@ -260,7 +369,7 @@ onMounted(() => { fetchData(); fetchStats() })
         }"
         :scroll-x="860"
         size="small"
-        :row-props="(row: any) => ({ style: 'cursor:pointer', onClick: () => router.push(`/customers/${row.id}`) })"
+        :row-props="(row: any) => ({ style: 'cursor:pointer', onClick: () => openQuickView(row) })"
         remote
       />
     </n-card>
@@ -273,7 +382,7 @@ onMounted(() => { fetchData(); fetchStats() })
           v-for="row in data"
           :key="row.id"
           class="mcard"
-          @click="router.push(`/customers/${row.id}`)"
+          @click="openQuickView(row)"
         >
           <!-- top row -->
           <div class="mcard-top">
@@ -307,7 +416,7 @@ onMounted(() => { fetchData(); fetchStats() })
 
           <!-- actions -->
           <div class="mcard-actions" @click.stop>
-            <n-button size="tiny" quaternary type="info" title="Detail" class="maction-btn" @click="router.push(`/customers/${row.id}`)">
+            <n-button size="tiny" quaternary type="info" title="Detail" class="maction-btn" @click="openQuickView(row)">
               <template #icon>
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               </template>
@@ -351,6 +460,56 @@ onMounted(() => { fetchData(); fetchStats() })
         <span style="font-size:14px">Belum ada pelanggan</span>
       </div>
     </div>
+
+    <!-- Panel Detail Pelanggan (quick view samping) -->
+    <n-drawer v-model:show="showDrawer" :width="isMobile ? '100%' : 420" placement="right">
+      <n-drawer-content title="Detail Pelanggan" closable body-content-style="padding: 16px 20px">
+        <div v-if="drawerLoading" class="mlist-center"><n-spin /></div>
+        <template v-else-if="det">
+          <!-- Header -->
+          <div class="qv-head">
+            <div class="qv-name-row">
+              <span class="qv-name">{{ det.name }}</span>
+              <span class="mpill" :style="{ background: statusMap[det.status]?.bg, color: statusMap[det.status]?.color }">
+                {{ statusMap[det.status]?.label || det.status }}
+              </span>
+            </div>
+            <div class="qv-sub">ID Pelanggan : <span class="mono">{{ det.customer_code }}</span></div>
+            <div class="qv-sub">Paket : {{ det.package?.name || '-' }}{{ det.package?.price ? ' - ' + fmtCurrency(det.package.price) + '/bln' : '' }}</div>
+            <div v-if="det.address" class="qv-sub">Alamat : {{ det.address }}</div>
+          </div>
+
+          <!-- Informasi -->
+          <div class="qv-grid">
+            <div class="qv-item"><span class="qv-lbl">Kontak</span><span class="qv-val">{{ det.phone || '-' }}</span></div>
+            <div class="qv-item">
+              <span class="qv-lbl">Status Koneksi</span>
+              <span class="qv-val mconn" :class="det.connection?.status || 'offline'">
+                <span class="mconn-dot" /> {{ connMap[det.connection?.status || 'offline']?.label }}
+              </span>
+            </div>
+            <div class="qv-item"><span class="qv-lbl">IP Address</span><span class="qv-val mono">{{ det.connection?.current_ip || det.connection?.configured_ip || '-' }}</span></div>
+            <div class="qv-item"><span class="qv-lbl">Uptime</span><span class="qv-val">{{ det.connection?.status === 'online' ? fmtUptime(det.connection?.active_session?.started_at) : '-' }}</span></div>
+            <div class="qv-item"><span class="qv-lbl">MAC Address</span><span class="qv-val mono">{{ detMac }}</span></div>
+            <div class="qv-item"><span class="qv-lbl">Download</span><span class="qv-val">{{ (det.connection?.realtime_download_mbps ?? 0).toFixed(1) }} Mbps</span></div>
+            <div class="qv-item"><span class="qv-lbl">Tanggal Daftar</span><span class="qv-val">{{ fmtDate(det.billing?.join_date) }}</span></div>
+            <div class="qv-item"><span class="qv-lbl">Upload</span><span class="qv-val">{{ (det.connection?.realtime_upload_mbps ?? 0).toFixed(1) }} Mbps</span></div>
+            <div class="qv-item"><span class="qv-lbl">Jatuh Tempo</span><span class="qv-val strong">{{ dueInfo() }}</span></div>
+            <div class="qv-item"><span class="qv-lbl">Last Seen</span><span class="qv-val">{{ detLastSeen }}</span></div>
+          </div>
+
+          <!-- Aksi -->
+          <div class="qv-actions">
+            <n-button type="primary" block @click="router.push(`/customers/${det.id}`)">Buka Detail Lengkap</n-button>
+            <div class="qv-actions-row">
+              <n-button v-if="det.status === 'active'" type="warning" secondary style="flex:1" @click="drawerIsolate">🔒 Isolir</n-button>
+              <n-button v-else-if="det.status === 'isolated'" type="success" secondary style="flex:1" @click="drawerActivate">Aktifkan</n-button>
+              <n-button type="error" secondary style="flex:1" @click="drawerDelete">🗑 Hapus</n-button>
+            </div>
+          </div>
+        </template>
+      </n-drawer-content>
+    </n-drawer>
   </div>
 </template>
 
@@ -374,8 +533,27 @@ onMounted(() => { fetchData(); fetchStats() })
 .stat-val { font-size: 20px; font-weight: 700; color: var(--app-text-primary); }
 .stat-val.online { color: #22c55e; }
 .stat-val.warn { color: #f97316; }
+.stat-val.danger { color: #ef4444; }
 .stat-lbl { font-size: 11px; color: var(--app-text-muted); font-weight: 600; text-transform: uppercase; }
 .stat-divider { width: 1px; height: 28px; background: var(--app-card-border); }
+.stat-btn { background: transparent; border: 1.5px solid transparent; border-radius: 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s; margin: -4px 0; padding-top: 4px; padding-bottom: 4px; }
+.stat-btn:hover { background: var(--app-accent-soft, rgba(128,128,128,0.08)); }
+.stat-btn.selected { border-color: var(--app-accent, #2563eb); background: var(--app-accent-soft, rgba(37,99,235,0.08)); }
+.stat-reset { font-size: 12px; font-weight: 700; color: var(--app-text-muted); }
+
+/* Quick view drawer */
+.qv-head { padding-bottom: 12px; border-bottom: 1px solid var(--app-card-border); margin-bottom: 12px; }
+.qv-name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.qv-name { font-size: 17px; font-weight: 800; text-transform: uppercase; }
+.qv-sub { font-size: 12.5px; color: var(--app-text-secondary); line-height: 1.6; }
+.qv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.qv-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qv-lbl { font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--app-text-muted); }
+.qv-val { font-size: 13px; color: var(--app-text-primary); overflow-wrap: anywhere; }
+.qv-val.strong { font-weight: 700; }
+.qv-val.mono, .mono { font-family: monospace; }
+.qv-actions { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.qv-actions-row { display: flex; gap: 10px; }
 
 /* Table */
 .clist-table-card { border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }

@@ -7,6 +7,7 @@ export const customerApi = {
   update: (id: string, data: Record<string, any>) => http.put(`/customers/${id}`, data),
   delete: (id: string) => http.delete(`/customers/${id}`),
   nextCode: () => http.get('/customers/next-code'),
+  stats: () => http.get('/customers/stats'),
   isolate: (id: string) => http.post(`/customers/${id}/isolate`),
   activate: (id: string) => http.post(`/customers/${id}/activate`),
   updateProfile: (id: string, data: Record<string, any>) => http.put(`/customers/${id}/profile`, data),
