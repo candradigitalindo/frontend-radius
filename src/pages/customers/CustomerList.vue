@@ -67,27 +67,45 @@ const showDrawer = ref(false)
 const drawerLoading = ref(false)
 const det = ref<any>(null)
 const qvTab = ref('informasi')
-const qvLogs = ref<any[]>([])
+const qvUsageHistory = ref<any[]>([])
+const qvConnections = ref<any[]>([])
 const qvInvoices = ref<any[]>([])
 async function openQuickView(row: any) {
   showDrawer.value = true
   drawerLoading.value = true
   det.value = null
   qvTab.value = 'informasi'
-  qvLogs.value = []
+  qvUsageHistory.value = []
+  qvConnections.value = []
   qvInvoices.value = []
   try {
-    const [detRes, logRes, invRes] = await Promise.all([
+    const [detRes, usageRes, connRes, invRes] = await Promise.all([
       customerApi.get(row.id),
-      customerApi.logs(row.id, { per_page: 10 }).catch(() => ({ data: { data: [] } })),
-      invoiceApi.list({ customer_id: row.id, per_page: 6 }).catch(() => ({ data: { data: [] } })),
+      customerApi.bandwidthHistory(row.id, { year: new Date().getFullYear() }).catch(() => ({ data: { data: [] } })),
+      customerApi.connections(row.id, { per_page: 5 }).catch(() => ({ data: { data: [] } })),
+      invoiceApi.list({ customer_id: row.id, per_page: 5 }).catch(() => ({ data: { data: [] } })),
     ])
     det.value = detRes.data?.data || detRes.data
-    qvLogs.value = logRes.data?.data || []
+    // Bulan terbaru dulu, dan hanya bulan yang sudah ada pemakaian.
+    qvUsageHistory.value = (usageRes.data?.data || [])
+      .filter((m: any) => m.session_count > 0 || m.total_bytes > 0)
+      .sort((a: any, b: any) => b.month - a.month)
+    qvConnections.value = connRes.data?.data || []
     qvInvoices.value = invRes.data?.data || []
   } catch { message.error('Gagal memuat detail pelanggan') }
   drawerLoading.value = false
 }
+const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+function fmtDuration(seconds?: number | null) {
+  let s = Math.max(0, Math.floor(seconds || 0))
+  const h = Math.floor(s / 3600); s -= h * 3600
+  const m = Math.floor(s / 60)
+  if (h) return `${h} jam ${m} menit`
+  return `${m} menit`
+}
+const connStatusLabel = (c: any) => c.status === 'active'
+  ? { label: 'Sedang Online', color: '#16a34a', bg: '#dcfce7' }
+  : { label: c.terminate_cause || 'Terputus', color: '#64748b', bg: '#f1f5f9' }
 const invoiceStatusMap: Record<string, { label: string; color: string; bg: string }> = {
   paid:    { label: 'Lunas',       color: '#16a34a', bg: '#dcfce7' },
   unpaid:  { label: 'Belum Bayar', color: '#d97706', bg: '#fef3c7' },
@@ -99,11 +117,6 @@ function fmtBytes(n?: number | null) {
   if (v >= 1e6) return (v / 1e6).toFixed(1) + ' MB'
   if (v >= 1e3) return (v / 1e3).toFixed(0) + ' KB'
   return v + ' B'
-}
-const logActionMap: Record<string, string> = {
-  created: 'Pelanggan dibuat', isolated: 'Diisolir', activated: 'Diaktifkan',
-  package_changed: 'Ganti paket', profile_updated: 'Profil diubah',
-  access_updated: 'Akses diubah', payment: 'Pembayaran', ont_transferred: 'ONT dipindah',
 }
 function fmtDate(d?: string | null) {
   if (!d) return '-'
@@ -495,6 +508,7 @@ onMounted(() => { fetchData(); fetchStats() })
              :style="{ maxWidth: '680px', width: '95vw' }" :bordered="false">
       <div v-if="drawerLoading" class="mlist-center"><n-spin /></div>
       <template v-else-if="det">
+      <div class="qv-modal-body">
         <!-- Header: avatar + identitas -->
         <div class="qv-head">
           <div class="qv-avatar">
@@ -551,22 +565,50 @@ onMounted(() => { fetchData(); fetchStats() })
             </div>
           </n-tab-pane>
 
-          <!-- TAB: Riwayat -->
+          <!-- TAB: Riwayat (Konsumsi Data + Koneksi) -->
           <n-tab-pane name="riwayat" tab="Riwayat">
+            <div class="qv-subhead">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span>Riwayat Konsumsi Data</span>
+            </div>
             <div class="qv-box">
-              <div v-if="!qvLogs.length" class="qv-empty">Belum ada riwayat aktivitas</div>
-              <div v-for="lg in qvLogs" :key="lg.id" class="qv-log-row">
+              <div v-if="!qvUsageHistory.length" class="qv-empty">Belum ada data konsumsi tahun ini</div>
+              <div v-for="m in qvUsageHistory" :key="m.month" class="qv-log-row">
                 <div class="qv-log-main">
-                  <span class="qv-log-action">{{ logActionMap[lg.action] || lg.action }}</span>
-                  <span v-if="lg.description" class="qv-log-desc">{{ lg.description }}</span>
+                  <span class="qv-log-action">{{ monthNames[m.month - 1] }} {{ new Date().getFullYear() }}</span>
+                  <span class="qv-log-desc">{{ m.session_count }} sesi koneksi</span>
                 </div>
-                <span class="qv-log-time">{{ fmtDate(lg.created_at) }}</span>
+                <div class="qv-usage-vals">
+                  <span class="qv-usage-down">↓ {{ fmtBytes(m.total_download) }}</span>
+                  <span class="qv-usage-up">↑ {{ fmtBytes(m.total_upload) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="qv-subhead" style="margin-top: 16px">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+              <span>Riwayat Koneksi <em>(5 terakhir)</em></span>
+            </div>
+            <div class="qv-box">
+              <div v-if="!qvConnections.length" class="qv-empty">Belum ada riwayat koneksi</div>
+              <div v-for="c in qvConnections" :key="c.id" class="qv-log-row">
+                <div class="qv-log-main">
+                  <span class="qv-log-action">{{ fmtDate(c.started_at) }}</span>
+                  <span class="qv-log-desc">IP {{ c.ip || '-' }} · durasi {{ fmtDuration(c.uptime) }} · ↓{{ fmtBytes(c.download) }} ↑{{ fmtBytes(c.upload) }}</span>
+                </div>
+                <span class="mpill" :style="{ background: connStatusLabel(c).bg, color: connStatusLabel(c).color }">
+                  {{ connStatusLabel(c).label }}
+                </span>
               </div>
             </div>
           </n-tab-pane>
 
           <!-- TAB: Pembayaran -->
           <n-tab-pane name="pembayaran" tab="Pembayaran">
+            <div class="qv-subhead">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              <span>Pembayaran <em>(5 terakhir)</em></span>
+            </div>
             <div class="qv-box">
               <div v-if="!qvInvoices.length" class="qv-empty">Belum ada invoice</div>
               <div v-for="inv in qvInvoices" :key="inv.id" class="qv-log-row">
@@ -602,15 +644,36 @@ onMounted(() => { fetchData(); fetchStats() })
           </n-tab-pane>
         </n-tabs>
 
-        <!-- Footer aksi (kanan, sesuai mockup) -->
+        <!-- Footer aksi -->
         <div class="qv-footer">
-          <n-button tertiary size="small" @click="router.push(`/customers/${det.id}`)">Buka Detail Lengkap</n-button>
+          <n-button tertiary size="medium" class="qv-btn-detail" @click="router.push(`/customers/${det.id}`)" title="Buka halaman detail lengkap pelanggan ini">
+            <template #icon>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </template>
+            Buka Detail Lengkap
+          </n-button>
           <div class="qv-footer-right">
-            <n-button v-if="det.status === 'active'" type="warning" ghost @click="drawerIsolate">🔒 Disable</n-button>
-            <n-button v-else-if="det.status === 'isolated'" type="success" ghost @click="drawerActivate">Aktifkan</n-button>
-            <n-button type="error" ghost @click="drawerDelete">🗑 Hapus</n-button>
+            <n-button v-if="det.status === 'active'" type="warning" @click="drawerIsolate" title="Putus sementara akses internet pelanggan ini">
+              <template #icon>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </template>
+              Isolir
+            </n-button>
+            <n-button v-else-if="det.status === 'isolated'" type="success" @click="drawerActivate" title="Aktifkan kembali akses internet pelanggan ini">
+              <template #icon>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+              </template>
+              Aktifkan
+            </n-button>
+            <n-button type="error" secondary @click="drawerDelete" title="Hapus data pelanggan ini secara permanen">
+              <template #icon>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </template>
+              Hapus
+            </n-button>
           </div>
         </div>
+      </div>
       </template>
     </n-modal>
   </div>
@@ -667,10 +730,34 @@ onMounted(() => { fetchData(); fetchStats() })
 .qv-log-action { font-size: 13px; font-weight: 600; }
 .qv-log-desc { font-size: 11.5px; color: var(--app-text-muted); }
 .qv-log-time { font-size: 11px; color: var(--app-text-muted); white-space: nowrap; flex-shrink: 0; }
-.qv-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
-.qv-footer-right { display: flex; gap: 10px; }
+.qv-usage-vals { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; font-size: 12px; font-weight: 600; }
+.qv-usage-down { color: #2563eb; }
+.qv-usage-up { color: #16a34a; }
+.qv-subhead { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 12.5px; font-weight: 700; color: var(--app-text-secondary); }
+.qv-subhead em { font-style: normal; font-weight: 500; color: var(--app-text-muted); }
+
+/* Body scroll wrapper — jaga modal tetap muat di layar pendek/mobile */
+.qv-modal-body { max-height: 76vh; overflow-y: auto; padding-right: 2px; }
+.qv-tabs :deep(.n-tabs-nav) { overflow-x: auto; }
+.qv-tabs :deep(.n-tabs-tab) { white-space: nowrap; }
+
+/* Footer aksi */
+.qv-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--app-card-border); flex-wrap: wrap; }
+.qv-footer-right { display: flex; gap: 8px; flex-wrap: wrap; }
+
 @media (max-width: 640px) {
   .qv-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .qv-head { flex-wrap: wrap; }
+  .qv-avatar { width: 52px; height: 52px; }
+  .qv-name { font-size: 15px; }
+  .qv-subhead { font-size: 12px; }
+  .qv-modal-body { max-height: 80vh; }
+  .qv-footer { flex-direction: column; align-items: stretch; }
+  .qv-btn-detail { width: 100%; justify-content: center; }
+  .qv-footer-right { width: 100%; }
+  .qv-footer-right .n-button { flex: 1; }
 }
 
 /* Table */

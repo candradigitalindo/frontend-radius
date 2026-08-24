@@ -15,9 +15,11 @@ export const customerApi = {
   updateService: (id: string, data: Record<string, any>) => http.put(`/customers/${id}/service`, data),
   logs: (id: string, params?: Record<string, any>) => http.get(`/customers/${id}/logs`, { params }),
   invoices: (id: string, params?: Record<string, any>) => http.get(`/customers/${id}/invoices`, { params }),
-  bandwidth: (id: string, params?: Record<string, any>) => http.get(`/customers/${id}/bandwidth`, { params }),
-  bandwidthHistory: (id: string, params?: Record<string, any>) => http.get(`/customers/${id}/bandwidth/history`, { params }),
-  connections: (id: string, params?: Record<string, any>) => http.get(`/customers/${id}/connections`, { params }),
+  bandwidth: (id: string, params?: Record<string, any>) => http.get(`/bandwidth/customers/${id}`, { params }),
+  // Rute sebenarnya di-mount di grup /bandwidth (lihat router.go bandwidth.Get),
+  // BUKAN di bawah /customers — dua baris ini sebelumnya salah path & tak pernah dipanggil.
+  bandwidthHistory: (id: string, params?: Record<string, any>) => http.get(`/bandwidth/customers/${id}/history`, { params }),
+  connections: (id: string, params?: Record<string, any>) => http.get(`/bandwidth/customers/${id}/connections`, { params }),
   rewardBalance: (id: string) => http.get(`/customers/${id}/reward-balance`),
   getOnt: (id: string) => http.get(`/customers/${id}/ont`),
 }
