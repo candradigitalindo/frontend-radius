@@ -507,9 +507,9 @@ onMounted(() => { fetchData(); fetchStats() })
                 {{ statusMap[det.status]?.label || det.status }}
               </span>
             </div>
-            <div class="qv-sub">ID Pelanggan : <span class="mono">{{ det.customer_code }}</span></div>
-            <div class="qv-sub">Paket : {{ det.package?.name || '-' }}{{ det.package?.price ? ' - ' + fmtCurrency(det.package.price) + '/bln' : '' }}</div>
-            <div v-if="det.address" class="qv-sub">Alamat : {{ det.address }}</div>
+            <div class="qv-sub"><span class="qv-sub-lbl">ID Pelanggan</span><span class="qv-sub-colon">:</span><span class="mono">{{ det.customer_code }}</span></div>
+            <div class="qv-sub"><span class="qv-sub-lbl">Paket</span><span class="qv-sub-colon">:</span><span>{{ det.package?.name || '-' }}{{ det.package?.price ? ' - ' + fmtCurrency(det.package.price) + '/bln' : '' }}</span></div>
+            <div v-if="det.address" class="qv-sub"><span class="qv-sub-lbl">Alamat</span><span class="qv-sub-colon">:</span><span>{{ det.address }}</span></div>
           </div>
         </div>
 
@@ -650,7 +650,9 @@ onMounted(() => { fetchData(); fetchStats() })
 .qv-head-text { min-width: 0; }
 .qv-name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .qv-name { font-size: 17px; font-weight: 800; text-transform: uppercase; }
-.qv-sub { font-size: 12.5px; color: var(--app-text-secondary); line-height: 1.6; }
+.qv-sub { display: flex; font-size: 12.5px; color: var(--app-text-secondary); line-height: 1.6; }
+.qv-sub-lbl { flex: 0 0 82px; }
+.qv-sub-colon { flex: 0 0 auto; margin-right: 6px; }
 .qv-box { border: 1px solid var(--app-card-border); border-radius: 10px; padding: 14px 16px; min-height: 150px; }
 .qv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
 .qv-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
