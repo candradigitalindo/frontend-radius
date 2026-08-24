@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, h, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { NCard, NDataTable, NButton, NInput, NPopconfirm, NIcon, NSpin, NDrawer, NDrawerContent, useMessage, useDialog } from 'naive-ui'
+import { NCard, NDataTable, NButton, NInput, NPopconfirm, NIcon, NSpin, NModal, NTabs, NTabPane, useMessage, useDialog } from 'naive-ui'
 import { Search, Plus, ChevronLeft, ChevronRight } from '@vicons/tabler'
 import type { DataTableColumns } from 'naive-ui'
-import { customerApi } from '../../api'
+import { customerApi, invoiceApi } from '../../api'
 
 const router = useRouter()
 const message = useMessage()
@@ -62,19 +62,48 @@ function filterParams(): Record<string, any> {
   }
 }
 
-// ── Panel Detail Pelanggan (quick view samping, usulan tenant) ──
+// ── Modal Detail Pelanggan (quick view, usulan tenant) ──
 const showDrawer = ref(false)
 const drawerLoading = ref(false)
 const det = ref<any>(null)
+const qvTab = ref('informasi')
+const qvLogs = ref<any[]>([])
+const qvInvoices = ref<any[]>([])
 async function openQuickView(row: any) {
   showDrawer.value = true
   drawerLoading.value = true
   det.value = null
+  qvTab.value = 'informasi'
+  qvLogs.value = []
+  qvInvoices.value = []
   try {
-    const { data: res } = await customerApi.get(row.id)
-    det.value = res.data || res
+    const [detRes, logRes, invRes] = await Promise.all([
+      customerApi.get(row.id),
+      customerApi.logs(row.id, { per_page: 10 }).catch(() => ({ data: { data: [] } })),
+      invoiceApi.list({ customer_id: row.id, per_page: 6 }).catch(() => ({ data: { data: [] } })),
+    ])
+    det.value = detRes.data?.data || detRes.data
+    qvLogs.value = logRes.data?.data || []
+    qvInvoices.value = invRes.data?.data || []
   } catch { message.error('Gagal memuat detail pelanggan') }
   drawerLoading.value = false
+}
+const invoiceStatusMap: Record<string, { label: string; color: string; bg: string }> = {
+  paid:    { label: 'Lunas',       color: '#16a34a', bg: '#dcfce7' },
+  unpaid:  { label: 'Belum Bayar', color: '#d97706', bg: '#fef3c7' },
+  overdue: { label: 'Lewat Tempo', color: '#dc2626', bg: '#fee2e2' },
+}
+function fmtBytes(n?: number | null) {
+  const v = Number(n || 0)
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + ' GB'
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + ' MB'
+  if (v >= 1e3) return (v / 1e3).toFixed(0) + ' KB'
+  return v + ' B'
+}
+const logActionMap: Record<string, string> = {
+  created: 'Pelanggan dibuat', isolated: 'Diisolir', activated: 'Diaktifkan',
+  package_changed: 'Ganti paket', profile_updated: 'Profil diubah',
+  access_updated: 'Akses diubah', payment: 'Pembayaran', ont_transferred: 'ONT dipindah',
 }
 function fmtDate(d?: string | null) {
   if (!d) return '-'
@@ -461,13 +490,17 @@ onMounted(() => { fetchData(); fetchStats() })
       </div>
     </div>
 
-    <!-- Panel Detail Pelanggan (quick view samping) -->
-    <n-drawer v-model:show="showDrawer" :width="isMobile ? '100%' : 420" placement="right">
-      <n-drawer-content title="Detail Pelanggan" closable body-content-style="padding: 16px 20px">
-        <div v-if="drawerLoading" class="mlist-center"><n-spin /></div>
-        <template v-else-if="det">
-          <!-- Header -->
-          <div class="qv-head">
+    <!-- Modal Detail Pelanggan (quick view di tengah, sesuai mockup tenant) -->
+    <n-modal v-model:show="showDrawer" preset="card" title="Detail Pelanggan"
+             :style="{ maxWidth: '680px', width: '95vw' }" :bordered="false">
+      <div v-if="drawerLoading" class="mlist-center"><n-spin /></div>
+      <template v-else-if="det">
+        <!-- Header: avatar + identitas -->
+        <div class="qv-head">
+          <div class="qv-avatar">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.7 0 4.9-2.2 4.9-4.9S14.7 2.2 12 2.2 7.1 4.4 7.1 7.1 9.3 12 12 12zm0 2.4c-3.3 0-9.8 1.7-9.8 4.9v2.4h19.6v-2.4c0-3.2-6.5-4.9-9.8-4.9z"/></svg>
+          </div>
+          <div class="qv-head-text">
             <div class="qv-name-row">
               <span class="qv-name">{{ det.name }}</span>
               <span class="mpill" :style="{ background: statusMap[det.status]?.bg, color: statusMap[det.status]?.color }">
@@ -478,38 +511,108 @@ onMounted(() => { fetchData(); fetchStats() })
             <div class="qv-sub">Paket : {{ det.package?.name || '-' }}{{ det.package?.price ? ' - ' + fmtCurrency(det.package.price) + '/bln' : '' }}</div>
             <div v-if="det.address" class="qv-sub">Alamat : {{ det.address }}</div>
           </div>
+        </div>
 
-          <!-- Informasi -->
-          <div class="qv-grid">
-            <div class="qv-item"><span class="qv-lbl">Kontak</span><span class="qv-val">{{ det.phone || '-' }}</span></div>
-            <div class="qv-item">
-              <span class="qv-lbl">Status Koneksi</span>
-              <span class="qv-val mconn" :class="det.connection?.status || 'offline'">
-                <span class="mconn-dot" /> {{ connMap[det.connection?.status || 'offline']?.label }}
-              </span>
+        <n-tabs v-model:value="qvTab" type="line" size="medium" class="qv-tabs">
+          <!-- TAB: Informasi -->
+          <n-tab-pane name="informasi" tab="Informasi">
+            <div class="qv-box qv-grid">
+              <div class="qv-item"><span class="qv-lbl">Kontak</span><span class="qv-val">{{ det.phone || '-' }}</span></div>
+              <div class="qv-item">
+                <span class="qv-lbl">Status Koneksi</span>
+                <span class="qv-val mconn" :class="det.connection?.status || 'offline'">
+                  <span class="mconn-dot" /> {{ connMap[det.connection?.status || 'offline']?.label }}
+                </span>
+              </div>
+              <div class="qv-item"><span class="qv-lbl">IP Address</span><span class="qv-val mono">{{ det.connection?.current_ip || det.connection?.configured_ip || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Uptime</span><span class="qv-val">{{ det.connection?.status === 'online' ? fmtUptime(det.connection?.active_session?.started_at) : '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">MAC Address</span><span class="qv-val mono">{{ detMac }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Download</span><span class="qv-val">{{ (det.connection?.realtime_download_mbps ?? 0).toFixed(1) }} Mbps</span></div>
+              <div class="qv-item"><span class="qv-lbl">Tanggal Daftar</span><span class="qv-val">{{ fmtDate(det.billing?.join_date) }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Upload</span><span class="qv-val">{{ (det.connection?.realtime_upload_mbps ?? 0).toFixed(1) }} Mbps</span></div>
+              <div class="qv-item"><span class="qv-lbl">Expired</span><span class="qv-val strong">{{ dueInfo() }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Last Seen</span><span class="qv-val">{{ detLastSeen }}</span></div>
             </div>
-            <div class="qv-item"><span class="qv-lbl">IP Address</span><span class="qv-val mono">{{ det.connection?.current_ip || det.connection?.configured_ip || '-' }}</span></div>
-            <div class="qv-item"><span class="qv-lbl">Uptime</span><span class="qv-val">{{ det.connection?.status === 'online' ? fmtUptime(det.connection?.active_session?.started_at) : '-' }}</span></div>
-            <div class="qv-item"><span class="qv-lbl">MAC Address</span><span class="qv-val mono">{{ detMac }}</span></div>
-            <div class="qv-item"><span class="qv-lbl">Download</span><span class="qv-val">{{ (det.connection?.realtime_download_mbps ?? 0).toFixed(1) }} Mbps</span></div>
-            <div class="qv-item"><span class="qv-lbl">Tanggal Daftar</span><span class="qv-val">{{ fmtDate(det.billing?.join_date) }}</span></div>
-            <div class="qv-item"><span class="qv-lbl">Upload</span><span class="qv-val">{{ (det.connection?.realtime_upload_mbps ?? 0).toFixed(1) }} Mbps</span></div>
-            <div class="qv-item"><span class="qv-lbl">Jatuh Tempo</span><span class="qv-val strong">{{ dueInfo() }}</span></div>
-            <div class="qv-item"><span class="qv-lbl">Last Seen</span><span class="qv-val">{{ detLastSeen }}</span></div>
-          </div>
+          </n-tab-pane>
 
-          <!-- Aksi -->
-          <div class="qv-actions">
-            <n-button type="primary" block @click="router.push(`/customers/${det.id}`)">Buka Detail Lengkap</n-button>
-            <div class="qv-actions-row">
-              <n-button v-if="det.status === 'active'" type="warning" secondary style="flex:1" @click="drawerIsolate">🔒 Isolir</n-button>
-              <n-button v-else-if="det.status === 'isolated'" type="success" secondary style="flex:1" @click="drawerActivate">Aktifkan</n-button>
-              <n-button type="error" secondary style="flex:1" @click="drawerDelete">🗑 Hapus</n-button>
+          <!-- TAB: Koneksi -->
+          <n-tab-pane name="koneksi" tab="Koneksi">
+            <div class="qv-box qv-grid">
+              <div class="qv-item"><span class="qv-lbl">Tipe Koneksi</span><span class="qv-val" style="text-transform:uppercase">{{ det.connection?.type || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Router</span><span class="qv-val">{{ det.router?.name || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Username PPPoE</span><span class="qv-val mono">{{ det.access?.pppoe_username || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">NAS IP</span><span class="qv-val mono">{{ det.connection?.active_session?.nas_ip_address || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Sesi Dimulai</span><span class="qv-val">{{ fmtDate(det.connection?.active_session?.started_at) }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Session ID</span><span class="qv-val mono">{{ det.connection?.active_session?.session_id || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Pemakaian Sesi ↓</span><span class="qv-val">{{ fmtBytes(det.connection?.active_session?.output_octets) }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Pemakaian Sesi ↑</span><span class="qv-val">{{ fmtBytes(det.connection?.active_session?.input_octets) }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Kecepatan Paket</span><span class="qv-val">{{ det.package ? `${det.package.bandwidth_down || '-'} / ${det.package.bandwidth_up || '-'} Mbps` : '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Port ODP</span><span class="qv-val">{{ det.odp_port ? 'Port ' + det.odp_port.port_number : '-' }}</span></div>
             </div>
+          </n-tab-pane>
+
+          <!-- TAB: Riwayat -->
+          <n-tab-pane name="riwayat" tab="Riwayat">
+            <div class="qv-box">
+              <div v-if="!qvLogs.length" class="qv-empty">Belum ada riwayat aktivitas</div>
+              <div v-for="lg in qvLogs" :key="lg.id" class="qv-log-row">
+                <div class="qv-log-main">
+                  <span class="qv-log-action">{{ logActionMap[lg.action] || lg.action }}</span>
+                  <span v-if="lg.description" class="qv-log-desc">{{ lg.description }}</span>
+                </div>
+                <span class="qv-log-time">{{ fmtDate(lg.created_at) }}</span>
+              </div>
+            </div>
+          </n-tab-pane>
+
+          <!-- TAB: Pembayaran -->
+          <n-tab-pane name="pembayaran" tab="Pembayaran">
+            <div class="qv-box">
+              <div v-if="!qvInvoices.length" class="qv-empty">Belum ada invoice</div>
+              <div v-for="inv in qvInvoices" :key="inv.id" class="qv-log-row">
+                <div class="qv-log-main">
+                  <span class="qv-log-action">{{ String(inv.period_month).padStart(2, '0') }}/{{ inv.period_year }} — {{ fmtCurrency(inv.total_amount) }}</span>
+                  <span class="qv-log-desc">Jatuh tempo {{ inv.due_date ? new Date(inv.due_date).toLocaleDateString('id-ID') : '-' }}{{ inv.paid_at ? ' · dibayar ' + new Date(inv.paid_at).toLocaleDateString('id-ID') : '' }}</span>
+                </div>
+                <span class="mpill" :style="{ background: invoiceStatusMap[inv.status]?.bg || '#f1f5f9', color: invoiceStatusMap[inv.status]?.color || '#64748b' }">
+                  {{ invoiceStatusMap[inv.status]?.label || inv.status }}
+                </span>
+              </div>
+            </div>
+          </n-tab-pane>
+
+          <!-- TAB: Perangkat -->
+          <n-tab-pane name="perangkat" tab="Perangkat">
+            <div v-if="det.ont" class="qv-box qv-grid">
+              <div class="qv-item"><span class="qv-lbl">Serial Number</span><span class="qv-val mono">{{ det.ont.serial_number || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Vendor / Model</span><span class="qv-val">{{ [det.ont.vendor, det.ont.model].filter(Boolean).join(' ') || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Status ONT</span><span class="qv-val" style="text-transform:capitalize">{{ det.ont.status || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Terakhir Online</span><span class="qv-val">{{ fmtDate(det.ont.last_online_at) }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">WiFi SSID</span><span class="qv-val">{{ det.ont.wifi?.ssid || '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Perangkat Terhubung</span><span class="qv-val">{{ det.ont.connected_hosts?.count ?? '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">Redaman (Rx)</span><span class="qv-val">{{ det.ont.signal?.rx_power != null ? det.ont.signal.rx_power + ' dBm' : '-' }}</span></div>
+              <div class="qv-item"><span class="qv-lbl">IP WAN ONT</span><span class="qv-val mono">{{ det.ont.network?.wan_ip || '-' }}</span></div>
+            </div>
+            <div v-else class="qv-box">
+              <div class="qv-empty">
+                Belum ada ONT terhubung.<br>
+                <span v-if="det.access?.acs_url" style="font-size:12px">Arahkan ONT ke ACS: <span class="mono">{{ det.access.acs_url }}</span></span>
+              </div>
+            </div>
+          </n-tab-pane>
+        </n-tabs>
+
+        <!-- Footer aksi (kanan, sesuai mockup) -->
+        <div class="qv-footer">
+          <n-button tertiary size="small" @click="router.push(`/customers/${det.id}`)">Buka Detail Lengkap</n-button>
+          <div class="qv-footer-right">
+            <n-button v-if="det.status === 'active'" type="warning" ghost @click="drawerIsolate">🔒 Disable</n-button>
+            <n-button v-else-if="det.status === 'isolated'" type="success" ghost @click="drawerActivate">Aktifkan</n-button>
+            <n-button type="error" ghost @click="drawerDelete">🗑 Hapus</n-button>
           </div>
-        </template>
-      </n-drawer-content>
-    </n-drawer>
+        </div>
+      </template>
+    </n-modal>
   </div>
 </template>
 
@@ -541,19 +644,32 @@ onMounted(() => { fetchData(); fetchStats() })
 .stat-btn.selected { border-color: var(--app-accent, #2563eb); background: var(--app-accent-soft, rgba(37,99,235,0.08)); }
 .stat-reset { font-size: 12px; font-weight: 700; color: var(--app-text-muted); }
 
-/* Quick view drawer */
-.qv-head { padding-bottom: 12px; border-bottom: 1px solid var(--app-card-border); margin-bottom: 12px; }
-.qv-name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+/* Quick view modal */
+.qv-head { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 4px; }
+.qv-avatar { width: 64px; height: 64px; border-radius: 50%; background: var(--clist-strip-bg); border: 1px solid var(--app-card-border); display: flex; align-items: center; justify-content: center; color: var(--app-text-muted); flex-shrink: 0; }
+.qv-head-text { min-width: 0; }
+.qv-name-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
 .qv-name { font-size: 17px; font-weight: 800; text-transform: uppercase; }
 .qv-sub { font-size: 12.5px; color: var(--app-text-secondary); line-height: 1.6; }
-.qv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.qv-box { border: 1px solid var(--app-card-border); border-radius: 10px; padding: 14px 16px; min-height: 150px; }
+.qv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; }
 .qv-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .qv-lbl { font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--app-text-muted); }
 .qv-val { font-size: 13px; color: var(--app-text-primary); overflow-wrap: anywhere; }
 .qv-val.strong { font-weight: 700; }
 .qv-val.mono, .mono { font-family: monospace; }
-.qv-actions { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
-.qv-actions-row { display: flex; gap: 10px; }
+.qv-empty { text-align: center; color: var(--app-text-muted); font-size: 13px; padding: 34px 0; line-height: 1.7; }
+.qv-log-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--app-card-border); }
+.qv-log-row:last-child { border-bottom: none; }
+.qv-log-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.qv-log-action { font-size: 13px; font-weight: 600; }
+.qv-log-desc { font-size: 11.5px; color: var(--app-text-muted); }
+.qv-log-time { font-size: 11px; color: var(--app-text-muted); white-space: nowrap; flex-shrink: 0; }
+.qv-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.qv-footer-right { display: flex; gap: 10px; }
+@media (max-width: 640px) {
+  .qv-grid { grid-template-columns: 1fr; }
+}
 
 /* Table */
 .clist-table-card { border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
