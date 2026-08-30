@@ -33,9 +33,9 @@ const typeLabels: Record<string, { label: string; color: 'info' | 'warning' | 'e
 }
 
 const variableHints: Record<string, string[]> = {
-  sub_expiry_h7:      ['{salam}', '{nama_isp}', '{nama_paket}', '{tanggal_berakhir}'],
-  sub_expiry_h1:      ['{salam}', '{nama_isp}', '{nama_paket}', '{tanggal_berakhir}'],
-  sub_expiry_h0:      ['{salam}', '{nama_isp}', '{nama_paket}', '{tanggal_berakhir}'],
+  sub_expiry_h7:      ['{salam}', '{nama_isp}', '{nama_paket}', '{tanggal_berakhir}', '{link_bayar}'],
+  sub_expiry_h1:      ['{salam}', '{nama_isp}', '{nama_paket}', '{tanggal_berakhir}', '{link_bayar}'],
+  sub_expiry_h0:      ['{salam}', '{nama_isp}', '{nama_paket}', '{tanggal_berakhir}', '{link_bayar}'],
   sub_payment:        ['{salam}', '{nama_isp}', '{nama_paket}', '{durasi}', '{jumlah}', '{tanggal_berakhir}'],
   otp_reset_password: ['{nama}', '{kode_otp}', '{nama_isp}', '{durasi}'],
   otp_registration:   ['{kode_otp}'],
