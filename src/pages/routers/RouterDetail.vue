@@ -290,7 +290,7 @@ const isMikrotik = computed(() => guideType.value === 'mikrotik')
 const supportsWireguard = computed(() => guideType.value === 'mikrotik' || guideType.value === 'vyos')
 const vendorLabel = computed(() => ({
   mikrotik: 'MikroTik RouterOS', cisco: 'Cisco IOS / IOS-XE', huawei: 'Huawei VRP',
-  juniper: 'Juniper JunOS', vyos: 'VyOS / EdgeRouter', ruijie: 'Ruijie RG-OS',
+  juniper: 'Juniper JunOS', vyos: 'VyOS', ruijie: 'Ruijie RG-OS',
 } as Record<string, string>)[guideType.value] || 'Router')
 
 // Paksa mode IP Publik untuk vendor tanpa WireGuard.
@@ -303,20 +303,56 @@ const radiusStepNum = computed(() =>
 const aaaStepNum = computed(() => radiusStepNum.value + 1)
 const monStepNum = computed(() => radiusStepNum.value + 2)
 
-// Panduan vendor (non-MikroTik): langkah WireGuard hanya untuk VyOS pada mode WireGuard.
+// Panduan vendor (non-MikroTik): langkah 1 = WireGuard (VyOS mode WireGuard)
+// atau daftarkan IP publik router (mode IP Publik); RADIUS=2, PPPoE=3, SNMP=4.
 const wgVisible = computed(() => guideType.value === 'vyos' && connectionMode.value === 'wireguard')
-const vRadiusStep = computed(() => (wgVisible.value ? 2 : 1))
-const vPppoeStep = computed(() => (wgVisible.value ? 3 : 2))
-const vSnmpStep = computed(() => (wgVisible.value ? 4 : 3))
+const vRadiusStep = 2
+const vPppoeStep = 3
+const vSnmpStep = 4
 
 // Nilai RADIUS sesuai mode (IP publik server, atau VPN IP saat WireGuard).
 const radiusAddr = computed(() => effectiveRadiusAddress.value || '<IP_SERVER>')
 const authPort = computed(() => cfg.value.radius_auth_port || '1812')
 const acctPort = computed(() => cfg.value.radius_acct_port || '1813')
 
-// RADIUS client config per vendor (mode IP Publik).
+// IP router yang harus muncul sebagai NAS-IP-Address: VPN IP di mode WireGuard,
+// IP publik yang terdaftar (nas_ip) di mode IP Publik. Server mencari router
+// dari nilai ini, jadi skrip vendor mengunci NAS-IP/source-address ke sini.
+const vendorRouterIp = computed(() =>
+  connectionMode.value === 'wireguard'
+    ? (routerVpnIP.value || '<VPN_IP_ROUTER>')
+    : (routerData.value.nas_ip || '<IP_PUBLIK_ROUTER>'))
+
+// Mode IP Publik untuk vendor non-MikroTik: tidak ada heartbeat yang memberi
+// tahu server IP router, jadi IP publik didaftarkan manual dari panduan ini.
+const nasIpInput = ref('')
+const nasIpSubmitting = ref(false)
+async function handleSaveNasIp() {
+  const ip = nasIpInput.value.trim()
+  if (!ip) return
+  nasIpSubmitting.value = true
+  try {
+    await routerApi.update(id, {
+      name: routerData.value.name,
+      router_type: routerData.value.router_type,
+      snmp_community: routerData.value.snmp_community,
+      is_active: routerData.value.is_active,
+      nas_ip: ip,
+    })
+    message.success('IP publik router tersimpan')
+    nasIpInput.value = ''
+    await fetchData()
+  } catch (e: any) {
+    message.error(e?.response?.data?.error || 'Gagal menyimpan IP publik router')
+  }
+  nasIpSubmitting.value = false
+}
+
+// RADIUS client config per vendor. Sintaks diverifikasi terhadap dokumentasi
+// vendor (VyOS 1.4/1.5, Cisco IOS-XE, Huawei AR, Junos, Ruijie RG-OS).
 const vendorRadiusScript = computed(() => {
   const ip = radiusAddr.value, sec = radiusSecret.value, coa = coaPort.value
+  const routerIp = vendorRouterIp.value
   switch (guideType.value) {
     case 'cisco':
       return `! ===== AAA + RADIUS (D Radius) =====
@@ -324,142 +360,215 @@ aaa new-model
 radius server DRADIUS
  address ipv4 ${ip} auth-port ${authPort.value} acct-port ${acctPort.value}
  key ${sec}
+ exit
 aaa group server radius DRADIUS-GRP
  server name DRADIUS
+ exit
 aaa authentication ppp default group DRADIUS-GRP local
 aaa authorization network default group DRADIUS-GRP
 aaa accounting network default start-stop group DRADIUS-GRP
 ! Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
 aaa accounting update newinfo periodic 5
-! CoA (disconnect / change of authorization)
+! NAS-IP-Address harus = IP publik yang didaftarkan di panel (${routerIp}).
+! Ganti <INTERFACE_WAN> dengan interface yang memiliki IP ${routerIp}.
+ip radius source-interface <INTERFACE_WAN>
+! CoA / Disconnect dari IP server
 aaa server radius dynamic-author
  client ${ip} server-key ${sec}
- port ${coa}`
+ port ${coa}
+ auth-type any
+ exit`
     case 'ruijie':
       return `! ===== AAA + RADIUS (D Radius) =====
 aaa new-model
 radius-server host ${ip} auth-port ${authPort.value} acct-port ${acctPort.value} key ${sec}
-aaa authentication ppp default group radius local
+aaa authentication ppp default group radius
 aaa authorization network default group radius
 aaa accounting network default start-stop group radius
 ! Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
-aaa accounting update newinfo periodic 5
-! CoA
-aaa server radius dynamic-author
- client ${ip} server-key ${sec}
- port ${coa}`
+aaa accounting update periodic 5
+! NAS-IP-Address harus = IP publik yang didaftarkan di panel (${routerIp})
+! Ganti <INTERFACE_WAN> dengan interface yang memiliki IP tersebut.
+ip radius source-interface <INTERFACE_WAN>
+! CoA / Disconnect (RFC 3576): RG-OS mendengar di UDP 3799, nonaktif secara default.
+! Pastikan CoA Port di panel = 3799.
+radius dynamic-authorization-extension enable`
     case 'huawei':
       return `# ===== RADIUS template (D Radius) =====
 radius-server template dradius
  radius-server shared-key cipher ${sec}
  radius-server authentication ${ip} ${authPort.value} weight 80
  radius-server accounting ${ip} ${acctPort.value} weight 80
-# CoA / authorization
+ radius-server source ip-address ${routerIp}
+ radius-attribute nas-ip ${routerIp}
+ undo radius-server user-name domain-included
+ quit
+# CoA / DM dari IP server (Huawei mendengar di UDP 3799 = CoA Port di panel)
 radius-server authorization ${ip} shared-key cipher ${sec}
 #
 aaa
  authentication-scheme dradius
   authentication-mode radius
+  quit
  accounting-scheme dradius
   accounting-mode radius
   accounting interim interval 5
- domain dradius
+  quit
+# Dipasang ke domain "default": dipakai pelanggan yang login tanpa @domain.
+# Bila memakai domain sendiri, jadikan default: system-view > domain <nama>
+ domain default
   authentication-scheme dradius
   accounting-scheme dradius
-  radius-server dradius`
+  radius-server dradius
+  quit
+ quit`
     case 'juniper':
       return `# ===== RADIUS (D Radius) =====
 set access radius-server ${ip} port ${authPort.value}
 set access radius-server ${ip} accounting-port ${acctPort.value}
 set access radius-server ${ip} secret "${sec}"
 set access radius-server ${ip} dynamic-request-port ${coa}
+# NAS-IP-Address harus = IP publik yang didaftarkan di panel
+set access radius-server ${ip} source-address ${routerIp}
 set access profile dradius authentication-order radius
 set access profile dradius radius authentication-server ${ip}
 set access profile dradius radius accounting-server ${ip}
 set access profile dradius accounting order radius
-# Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
-set access profile dradius accounting update-interval 5`
+# Fallback CLI Junos minimal 10 menit. Access-Accept D Radius mengirim
+# Acct-Interim-Interval = 300 detik untuk update tiap 5 menit (prioritas RADIUS).
+set access profile dradius accounting update-interval 10`
     case 'vyos':
-      return `# ===== RADIUS untuk PPPoE Server (D Radius) =====
+      return `# ===== RADIUS untuk PPPoE Server (D Radius) — VyOS 1.4+ =====
 set service pppoe-server authentication mode radius
 set service pppoe-server authentication radius server ${ip} key '${sec}'
-set service pppoe-server authentication radius server ${ip} auth-port ${authPort.value}
+set service pppoe-server authentication radius server ${ip} port ${authPort.value}
 set service pppoe-server authentication radius server ${ip} acct-port ${acctPort.value}
+# NAS-IP wajib: server mengenali router dari atribut ini
+# (${connectionMode.value === 'wireguard' ? 'VPN IP router' : 'IP publik yang didaftarkan di panel'})
+set service pppoe-server authentication radius nas-ip-address ${routerIp}
+set service pppoe-server authentication radius source-address ${routerIp}
 # Interim accounting tiap 5 menit (wajib — tanpa ini server menandai sesi putus >10 menit)
-set service pppoe-server authentication radius acct-interim-interval 300
-# CoA (dynamic authorization)
-set service pppoe-server authentication radius dynamic-author server '${ip}'
+set service pppoe-server authentication radius accounting-interim-interval 300
+# CoA/DM: alamat tempat ROUTER menerima CoA = IP router sendiri, bukan IP server
+set service pppoe-server authentication radius dynamic-author server ${routerIp}
 set service pppoe-server authentication radius dynamic-author key '${sec}'
-set service pppoe-server authentication radius dynamic-author port ${coa}`
+set service pppoe-server authentication radius dynamic-author port ${coa}
+# Limit kecepatan dari atribut Mikrotik-Rate-Limit (default accel-ppp = Filter-Id)
+set service pppoe-server authentication radius rate-limit enable
+set service pppoe-server authentication radius rate-limit vendor 'Mikrotik'
+set service pppoe-server authentication radius rate-limit attribute 'Mikrotik-Rate-Limit'`
     default:
       return ''
   }
 })
 
-// PPPoE / BNG enablement per vendor.
+// PPPoE / BNG enablement per vendor. IP pool & loopback di bawah hanya cadangan:
+// IP pelanggan akhirnya dikirim RADIUS (Framed-IP-Address).
 const vendorPppoeScript = computed(() => {
   switch (guideType.value) {
     case 'cisco':
       return `! ===== PPPoE Server =====
+interface Loopback0
+ ip address 10.20.0.1 255.255.255.255
+ exit
+! Pool cadangan (RADIUS dapat menimpa IP per pelanggan)
+ip local pool RADIUS 10.20.0.2 10.20.255.254
 bba-group pppoe DRADIUS
  virtual-template 1
+ exit
 interface Virtual-Template1
  mtu 1492
  ip unnumbered Loopback0
  peer default ip address pool RADIUS
  ppp authentication chap pap
+ exit
 ! Terapkan ke interface arah pelanggan (sesuaikan)
 interface GigabitEthernet0/0/1
- pppoe enable group DRADIUS`
+ pppoe enable group DRADIUS
+ exit`
     case 'ruijie':
-      return `! ===== PPPoE Server =====
+      return `! ===== PPPoE Server (RG-EG / RSR) =====
+pppoe-server enable
+interface Loopback0
+ ip address 10.20.0.1 255.255.255.255
+ exit
+! Pool cadangan (RADIUS dapat menimpa IP per pelanggan)
+ip local pool DRADIUS 10.20.0.2 10.20.255.254
 bba-group pppoe DRADIUS
  virtual-template 1
+ exit
 interface Virtual-Template 1
+ ip unnumbered Loopback0
+ peer default ip address pool DRADIUS
  ppp authentication chap pap
- peer default ip address pool RADIUS
+ exit
 ! Interface arah pelanggan (sesuaikan)
 interface GigabitEthernet 0/1
- pppoe enable group DRADIUS`
+ pppoe-server enable group DRADIUS
+ exit`
     case 'huawei':
-      return `# ===== PPPoE / BAS interface =====
+      return `# ===== Pool & PPPoE (seri AR) =====
+ip pool dradius
+ gateway-list 10.20.0.1
+ network 10.20.0.0 mask 255.255.0.0
+ quit
 interface Virtual-Template1
  ppp authentication-mode chap pap
  remote address pool dradius
+ ip address 10.20.0.1 255.255.0.0
+ quit
 # Bind ke interface arah pelanggan (sesuaikan)
 interface GigabitEthernet0/0/1
- pppoe-server bind Virtual-Template 1`
+ pppoe-server bind Virtual-Template 1
+ quit
+# ME60/NE (BRAS): di interface pelanggan tambahkan
+#  bas
+#   access-type layer2-subscriber default-domain authentication default
+#   authentication-method ppp`
     case 'juniper':
-      return `# ===== PPPoE Subscriber (dynamic-profiles) =====
+      return `# ===== Contoh PPPoE Server (satu sesi pp0 statis) =====
+# Untuk banyak pelanggan pada MX/BNG, gunakan dynamic-profile sesuai Junos/perangkat.
+set interfaces lo0 unit 0 family inet address 10.20.0.1/32
+set interfaces ge-0/0/1 unit 0 encapsulation ppp-over-ether
+set interfaces pp0 unit 0 pppoe-options underlying-interface ge-0/0/1.0
 set interfaces pp0 unit 0 pppoe-options server
-set interfaces pp0 unit 0 ppp-options chap
-set interfaces pp0 unit 0 ppp-options pap
-set interfaces pp0 unit 0 access-profile dradius
-# Terapkan family pada interface arah pelanggan (sesuaikan)
-set interfaces ge-0/0/1 unit 0 encapsulation ppp-over-ether`
+set interfaces pp0 unit 0 ppp-options chap access-profile dradius
+set interfaces pp0 unit 0 ppp-options pap access-profile dradius
+set interfaces pp0 unit 0 family inet unnumbered-address lo0.0
+# Alternatif: jadikan profil default semua PPP dengan "set access-profile dradius"`
     case 'vyos':
-      return `# ===== PPPoE Server =====
+      return `# ===== PPPoE Server (VyOS 1.4+) =====
 set service pppoe-server interface eth1
 set service pppoe-server access-concentrator 'D-Radius'
 set service pppoe-server gateway-address 10.20.0.1
 set service pppoe-server name-server 8.8.8.8
-set service pppoe-server client-ip-pool dradius range 10.20.0.2-10.20.255.254`
+# Pool cadangan (RADIUS dapat menimpa IP per pelanggan)
+set service pppoe-server client-ip-pool dradius range 10.20.0.2-10.20.0.254
+set service pppoe-server default-pool dradius`
     default:
       return ''
   }
 })
 
-// WireGuard (hanya VyOS pada mode WireGuard).
+// WireGuard (hanya VyOS pada mode WireGuard). Sintaks VyOS 1.4+: peer memakai
+// address + port (bukan endpoint), key pair dibuat dengan generate pki.
 const vendorWgScript = computed(() => {
   if (guideType.value !== 'vyos') return ''
-  return `# ===== WireGuard ke server D Radius =====
-set interfaces wireguard wg0 address '${routerVpnIP.value || '<VPN_IP>'}/24'
-set interfaces wireguard wg0 private-key <PRIVATE_KEY_ROUTER>
+  return `# ===== WireGuard ke server D Radius (VyOS 1.4+) =====
+# 1) Buat key pair, catat private key-nya:
+run generate pki wireguard key-pair
+# 2) Interface + peer server
+set interfaces wireguard wg0 address '${routerVpnIP.value || '<VPN_IP>'}/${vpnSubnet.value.split('/')[1] || '24'}'
+set interfaces wireguard wg0 port ${wgRouterPort.value || '13231'}
+set interfaces wireguard wg0 private-key '<PRIVATE_KEY_DARI_LANGKAH_1>'
 set interfaces wireguard wg0 peer dradius public-key '${effectiveServerPublicKey.value}'
-set interfaces wireguard wg0 peer dradius endpoint '${effectiveServerPublicIP.value}:${vpnListenPort.value}'
+set interfaces wireguard wg0 peer dradius address '${effectiveServerPublicIP.value}'
+set interfaces wireguard wg0 peer dradius port ${vpnListenPort.value}
 set interfaces wireguard wg0 peer dradius allowed-ips '${vpnSubnet.value}'
 set interfaces wireguard wg0 peer dradius persistent-keepalive 25
-# Tampilkan public key router (daftarkan ke dashboard):
+commit
+save
+# 3) Tampilkan public key router, lalu daftarkan di kolom bawah:
 run show interfaces wireguard wg0 public-key`
 })
 
@@ -487,18 +596,20 @@ set service snmp community ${comm} authorization ro`
   }
 })
 
-// Penjelasan cara limit kecepatan paket diterapkan per vendor (dikirim otomatis oleh RADIUS).
+// Penjelasan cara limit kecepatan paket diterapkan per vendor — harus selaras
+// dengan applyRateLimit di backend (internal/pkg/radius/server.go).
 const bandwidthNote = computed(() => {
   switch (guideType.value) {
     case 'huawei':
-      return 'Limit kecepatan diterapkan otomatis oleh RADIUS via atribut Huawei (Input/Output-Average-Rate). Tidak perlu konfigurasi QoS manual.'
+      return 'RADIUS mengirim atribut Huawei Input/Output-Average-Rate (bit/s). Diterapkan otomatis di BRAS ME60/NE; pada seri AR pastikan firmware mendukung CAR per-user dari RADIUS.'
     case 'cisco':
+      return 'RADIUS mengirim Cisco-AVPair ip:sub-qos-policy-in/out = nama paket (spasi → underscore). Buat policy-map dengan nama itu di router. Pastikan platform dan firmware mendukung per-session QoS via AAA, misalnya IOS-XE ASR1k/ISG.'
     case 'ruijie':
-      return 'RADIUS mengirim Filter-Id = nama paket + QoS policy AVPair. Buat satu policy-map shaping di router untuk tiap paket dengan nama sama seperti paket (spasi → underscore).'
+      return 'Limit kecepatan diatur manual di router sesuai model dan firmware RG-OS. Server belum mengirim atribut limit privat Ruijie; autentikasi dan accounting memakai RADIUS standar.'
     case 'juniper':
-      return 'RADIUS mengirim Filter-Id = nama paket. Definisikan CoS/firewall-filter di router untuk tiap paket dengan nama sama (spasi → underscore).'
+      return 'RADIUS mengirim Filter-Id = nama paket (spasi → underscore). Junos menerapkannya sebagai firewall filter IPv4 arah input hanya pada subscriber management (dynamic-profile, MX). Dengan pp0 statis seperti di atas, atur limit manual.'
     case 'vyos':
-      return 'VyOS/EdgeRouter (accel-ppp) membaca atribut Mikrotik-Rate-Limit. Aktifkan shaper accel-ppp agar limit kecepatan otomatis berlaku.'
+      return 'RADIUS mengirim Mikrotik-Rate-Limit. Tiga baris rate-limit pada langkah RADIUS membuat accel-ppp (module shaper) menerapkannya otomatis.'
     default:
       return ''
   }
@@ -937,7 +1048,8 @@ onUnmounted(() => {
           </n-descriptions-item>
           <n-descriptions-item label="IP Router Terdeteksi">
             <n-text v-if="routerData.nas_ip" code>{{ routerData.nas_ip }}</n-text>
-            <n-text v-else depth="3">Menunggu heartbeat / RADIUS</n-text>
+            <n-text v-else-if="isMikrotik" depth="3">Menunggu heartbeat / RADIUS</n-text>
+            <n-text v-else depth="3">Belum didaftarkan — isi di Konfigurasi (langkah 1) atau Edit Router</n-text>
           </n-descriptions-item>
 
           <!-- Baris khusus VPN — hanya saat WireGuard aktif -->
@@ -1144,7 +1256,7 @@ onUnmounted(() => {
         </div>
         <div>
           <div class="cfg-modal-title">Panduan Setup {{ vendorLabel }}</div>
-          <div class="cfg-modal-subtitle">{{ isMikrotik ? 'Dari modem ISP, PPPoE pelanggan, hingga koneksi RADIUS' : 'Hubungkan ke RADIUS via IP Publik' }}</div>
+          <div class="cfg-modal-subtitle">{{ isMikrotik ? 'Dari modem ISP, PPPoE pelanggan, hingga koneksi RADIUS' : supportsWireguard ? 'Hubungkan ke RADIUS via IP Publik atau WireGuard VPN' : 'Hubungkan ke RADIUS via IP Publik' }}</div>
         </div>
       </div>
     </template>
@@ -1541,12 +1653,40 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="cfg-banner cfg-banner--ok">
+        <div v-if="connectionMode === 'direct'" class="cfg-banner cfg-banner--warn">
+          <n-icon class="cfg-banner-svg" :size="18"><AlertTriangle /></n-icon>
+          <span>Mode IP Publik <strong>hanya berfungsi bila router memegang IP publik langsung di WAN-nya</strong> (bukan di belakang NAT). Server mengenali router dari IP itu, jadi daftarkan dulu di langkah 1. Firewall: dari router ke server UDP <strong>{{ authPort }}/{{ acctPort }}</strong>; dari IP server <strong>{{ effectiveServerPublicIP || '-' }}</strong> ke router UDP <strong>{{ coaPort }}</strong> (CoA/isolir) dan UDP <strong>161</strong> (status SNMP).</span>
+        </div>
+        <div v-else class="cfg-banner cfg-banner--ok">
           <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
-          <span>Buka port <strong>{{ authPort }}/{{ acctPort }}</strong> (UDP) &amp; <strong>{{ coaPort }}</strong> (UDP/TCP) ke IP server di firewall. Monitoring status memakai SNMP.</span>
+          <span>RADIUS dan CoA berjalan di dalam tunnel WireGuard. Izinkan UDP <strong>{{ coaPort }}</strong> (CoA) dan UDP <strong>161</strong> (status SNMP) masuk dari <strong>{{ cfg.server_vpn_ip || 'IP VPN server' }}</strong> di interface wg0.</span>
         </div>
 
-        <!-- WireGuard (VyOS, mode WireGuard) -->
+        <!-- Langkah 1 (mode IP Publik): daftarkan IP publik router -->
+        <div v-if="!wgVisible" class="cfg-step">
+          <div class="cfg-step-header">
+            <span class="cfg-step-num">1</span>
+            <div>
+              <div class="cfg-step-title">Daftarkan IP Publik Router <span class="cfg-req">wajib</span></div>
+              <div class="cfg-step-desc">
+                {{ vendorLabel }} tidak mengirim heartbeat, jadi server harus diberi tahu IP publik (WAN) router secara manual.
+                <strong>Sebelum IP ini terdaftar, semua autentikasi RADIUS dari router ditolak</strong> ("unknown NAS").
+                IP yang sama dipakai server untuk CoA/isolir dan polling status SNMP.
+              </div>
+            </div>
+          </div>
+          <div class="cfg-key-form">
+            <n-input v-model:value="nasIpInput" :placeholder="routerData.nas_ip || 'Contoh: 103.10.20.30'" size="small" style="flex: 1" :disabled="nasIpSubmitting" />
+            <n-button size="small" type="primary" :loading="nasIpSubmitting" :disabled="!nasIpInput.trim()" @click="handleSaveNasIp">Simpan</n-button>
+          </div>
+          <div v-if="routerData.nas_ip" class="cfg-key-registered">
+            <n-icon :size="14" :color="'#52c41a'"><Check /></n-icon>
+            <span style="color: #52c41a; font-weight: 600; font-size: 12px">IP terdaftar</span>
+            <span class="cfg-key-value">{{ routerData.nas_ip }}</span>
+          </div>
+        </div>
+
+        <!-- Langkah 1 (VyOS, mode WireGuard) -->
         <div v-if="wgVisible" class="cfg-step">
           <div class="cfg-step-header">
             <span class="cfg-step-num">1</span>
@@ -1610,7 +1750,7 @@ onUnmounted(() => {
             <span class="cfg-step-num">{{ vSnmpStep }}</span>
             <div>
               <div class="cfg-step-title">SNMP Monitoring</div>
-              <div class="cfg-step-desc">Dashboard memantau status router via SNMP. Community: <code>{{ routerData.snmp_community || 'public' }}</code>.</div>
+              <div class="cfg-step-desc">Server mem-poll SNMP v2c ke <code>{{ vendorRouterIp }}</code> secara berkala untuk menandai router Online. Community: <code>{{ routerData.snmp_community || 'public' }}</code>. Izinkan UDP 161 dari IP server.</div>
             </div>
           </div>
           <div class="cfg-code">

@@ -22,14 +22,18 @@ function onResize() { isMobile.value = window.innerWidth < 1024 }
 onMounted(() => window.addEventListener('resize', onResize))
 onUnmounted(() => window.removeEventListener('resize', onResize))
 
+// nas_ip = IP publik (WAN) router untuk mode IP Publik. MikroTik mengisinya
+// otomatis lewat heartbeat; merek lain tidak punya heartbeat, jadi harus diisi
+// manual — tanpa ini server menolak RADIUS dari router ("unknown NAS").
 const form = ref({
   name: '',
   router_type: 'mikrotik',
   is_active: true,
+  nas_ip: '',
 })
 
 function resetForm() {
-  form.value = { name: '', router_type: 'mikrotik', is_active: true }
+  form.value = { name: '', router_type: 'mikrotik', is_active: true, nas_ip: '' }
   editId.value = null
   typeSearch.value = ''
 }
@@ -39,7 +43,7 @@ const createForm = ref({ name: '', router_type: 'mikrotik' })
 
 const routerTypeOptions = [
   { label: 'MikroTik', sub: 'RouterOS', value: 'mikrotik', desc: 'IP Publik, L2TP/SSTP & WireGuard VPN', badge: 'WireGuard', color: '#e11d48' },
-  { label: 'VyOS / EdgeRouter', sub: 'VyOS / EdgeOS', value: 'vyos', desc: 'IP Publik & WireGuard VPN', badge: 'WireGuard', color: '#0891b2' },
+  { label: 'VyOS', sub: 'VyOS 1.4+ (accel-ppp)', value: 'vyos', desc: 'IP Publik & WireGuard VPN', badge: 'WireGuard', color: '#0891b2' },
   { label: 'Cisco', sub: 'IOS / IOS-XE', value: 'cisco', desc: 'AAA RADIUS via IP Publik', badge: 'IP Publik', color: '#2563eb' },
   { label: 'Huawei', sub: 'VRP / BRAS', value: 'huawei', desc: 'RADIUS template via IP Publik', badge: 'IP Publik', color: '#dc2626' },
   { label: 'Juniper', sub: 'JunOS', value: 'juniper', desc: 'access-profile RADIUS', badge: 'IP Publik', color: '#0d9488' },
@@ -188,6 +192,7 @@ function openEdit(r: any) {
     name: r.name,
     router_type: r.router_type || 'mikrotik',
     is_active: r.is_active,
+    nas_ip: r.nas_ip || '',
   }
   typeSearch.value = ''
   showModal.value = true
@@ -367,7 +372,14 @@ onMounted(fetchData)
             <n-text :depth="form.is_active ? 1 : 3">{{ form.is_active ? 'Aktif' : 'Nonaktif' }}</n-text>
           </n-space>
         </n-form-item>
+        <n-form-item v-if="editId" label="IP Publik Router (mode IP Publik)">
+          <n-input v-model:value="form.nas_ip" placeholder="Contoh: 103.10.20.30 — kosongkan bila pakai VPN" size="large" />
+        </n-form-item>
       </div>
+      <n-text v-if="editId" depth="3" style="display:block; margin: -6px 0 14px; font-size: 12px">
+        IP WAN router yang dipakai server untuk mengenali RADIUS, mengirim CoA/isolir, dan polling status SNMP.
+        MikroTik mengisinya otomatis lewat heartbeat; Cisco, Huawei, Juniper, Ruijie, dan VyOS mode IP Publik wajib diisi manual.
+      </n-text>
 
       <!-- Pemilih jenis router (kartu + search) -->
       <div class="rf-type-head">

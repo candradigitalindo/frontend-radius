@@ -68,13 +68,14 @@ const sections: Section[] = [
       {
         icon: RouterIcon,
         title: 'Router',
-        desc: 'Hubungkan router ke server RADIUS sebagai gerbang autentikasi pelanggan. Mendukung MikroTik, Cisco, Huawei, Juniper, VyOS/EdgeRouter, dan Ruijie.',
+        desc: 'Hubungkan router ke server RADIUS sebagai gerbang autentikasi pelanggan. Mendukung MikroTik, Cisco, Huawei, Juniper, VyOS, dan Ruijie.',
         steps: [
           'Buka Jaringan → Router → Daftarkan Router, isi nama dan pilih jenis router.',
           'Buka detail router → tombol Konfigurasi. Panduan MikroTik terdiri dari 3 tab berurutan: Persiapan (WAN & internet), PPP Server, lalu Koneksi RADIUS.',
-          'Pilih mode koneksi sesuai kondisi: WireGuard (MikroTik RouterOS 7 / VyOS — paling disarankan), VPN Legacy L2TP/SSTP (RouterOS 6 atau router di belakang NAT tanpa IP publik), atau IP Publik (router punya IP publik sendiri; satu-satunya mode untuk merek selain MikroTik/VyOS).',
-          'Salin skrip apa adanya — sudah termasuk interim accounting 5 menit (wajib, agar status online akurat) dan one-session-per-host (mencegah sesi PPPoE ganda saat pelanggan redial).',
-          'Pastikan status menjadi Online. MikroTik dipantau via heartbeat; merek lain via SNMP (skrip SNMP ada di panduan).',
+          'Pilih mode koneksi sesuai kondisi: WireGuard (MikroTik RouterOS 7 / VyOS — paling disarankan), VPN Legacy L2TP/SSTP (RouterOS 6 atau router di belakang NAT tanpa IP publik), atau IP Publik (router punya IP publik langsung di WAN, tanpa NAT; satu-satunya mode untuk Cisco, Huawei, Juniper, dan Ruijie).',
+          'Mode IP Publik pada merek selain MikroTik: daftarkan IP publik router di langkah 1 panduan (atau kolom IP Publik di Edit Router). Tidak ada heartbeat di merek ini, jadi sebelum IP terdaftar semua autentikasi RADIUS ditolak.',
+          'Sesuaikan nama interface, pool IP, dan placeholder pada panduan dengan jaringan Anda sebelum menjalankan skrip. Interim accounting 5 menit menjaga status sesi pelanggan tetap akurat; skrip MikroTik juga menyertakan one-session-per-host untuk mencegah sesi PPPoE ganda.',
+          'Pastikan status menjadi Online. MikroTik dipantau via heartbeat; merek lain via polling SNMP ke IP yang terdaftar (VPN IP atau IP publik) — izinkan UDP 161 dari IP server.',
         ],
         tip: 'RADIUS Secret, CoA Port, dan Heartbeat Token di-generate otomatis — tidak perlu diisi manual. Router yang sudah lama terpasang cukup jalankan ulang blok "Use RADIUS di PPP" untuk mendapat setelan anti sesi ganda.',
       },
@@ -131,7 +132,7 @@ const sections: Section[] = [
         steps: [
           'Buka Jaringan → Konsumsi Data untuk melihat pemakaian data per pelanggan.',
           'Grafik trafik per-interface router tampil bila skrip "Monitoring Bandwidth Interface" (ada di panduan konfigurasi router) dipasang — bekerja tanpa VPN.',
-          'Limit kecepatan otomatis penuh di MikroTik & Huawei (VyOS perlu aktifkan shaper accel-ppp). Untuk Cisco/Ruijie buat policy-map shaping per paket, Juniper buat CoS/filter per paket — nama sama dengan nama paket (spasi → underscore).',
+          'Limit kecepatan otomatis di MikroTik, VyOS (tiga baris rate-limit di panduan), dan Huawei BRAS yang mendukung atribut rate. Cisco dengan per-session QoS via AAA: buat policy-map per paket dengan nama paket (spasi → underscore), dikirim lewat AVPair sub-qos-policy. Juniper menerima Filter-Id; siapkan filter pada subscriber management. Ruijie: atur limit manual sesuai model dan firmware router.',
         ],
       },
       {
