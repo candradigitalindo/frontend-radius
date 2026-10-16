@@ -64,8 +64,14 @@ const vpnKeySubmitting = ref(false)
 const vpnStatus = ref<any>(null)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
 
-// Router dianggap memakai VPN hanya jika public key WireGuard sudah terdaftar.
+// WireGuard didahulukan seperti backend; legacy dikenali dari IP tunnel tetap.
 const usingVpn = computed(() => !!routerData.value.vpn_public_key)
+const usingLegacyVpn = computed(() => !usingVpn.value && !!routerData.value.legacy_vpn_ip)
+const registeredConnectionLabel = computed(() =>
+  usingVpn.value ? 'WireGuard VPN' : usingLegacyVpn.value ? 'VPN L2TP/SSTP' : 'IP Publik')
+const registeredRouterAddress = computed(() =>
+  usingVpn.value ? routerData.value.vpn_ip
+    : usingLegacyVpn.value ? routerData.value.legacy_vpn_ip : routerData.value.nas_ip)
 
 // Mode koneksi: 'direct' = IP Publik (butuh IP publik di WAN router),
 // 'wireguard' = VPN WireGuard (ROS 7+),
@@ -125,7 +131,8 @@ const legacyVpnSubmitting = ref(false)
 async function handleEnableLegacyVpn() {
   legacyVpnSubmitting.value = true
   try {
-    await routerApi.enableLegacyVpn(id)
+    const { data: res } = await routerApi.enableLegacyVpn(id)
+    routerData.value = res.data || res
     message.success('Kredensial VPN L2TP/SSTP berhasil dibuat')
     await fetchMikrotikConfig(false)
   } catch (e: any) {
@@ -286,14 +293,15 @@ const pppoeServerScript = `# Aktifkan PPPoE Server di port yang menghadap pelang
 // ── Multi-vendor: jenis router & panduan yang disesuaikan ───────────────────
 const guideType = computed(() => routerData.value.router_type || 'mikrotik')
 const isMikrotik = computed(() => guideType.value === 'mikrotik')
-// Hanya MikroTik & VyOS yang punya WireGuard native; vendor lain = IP Publik saja.
+// Panduan WireGuard langsung tersedia untuk MikroTik dan VyOS.
+// VPN vendor lain / gateway tambahan perlu konfigurasi sesuai model dan topologi.
 const supportsWireguard = computed(() => guideType.value === 'mikrotik' || guideType.value === 'vyos')
 const vendorLabel = computed(() => ({
   mikrotik: 'MikroTik RouterOS', cisco: 'Cisco IOS / IOS-XE', huawei: 'Huawei VRP',
   juniper: 'Juniper JunOS', vyos: 'VyOS', ruijie: 'Ruijie RG-OS',
 } as Record<string, string>)[guideType.value] || 'Router')
 
-// Paksa mode IP Publik untuk vendor tanpa WireGuard.
+// Skrip otomatis vendor lain saat ini hanya mencakup mode IP Publik.
 watch(supportsWireguard, (ok) => { if (!ok) connectionMode.value = 'direct' }, { immediate: true })
 
 // Penomoran langkah panduan MikroTik per mode (heartbeat selalu langkah 1).
@@ -1041,10 +1049,10 @@ onUnmounted(() => {
         <template #header><span class="info-card-title">Informasi Koneksi</span></template>
         <n-descriptions :label-placement="isMobile ? 'top' : 'left'" :column="1" bordered size="small">
           <n-descriptions-item label="Mode Koneksi">
-            <n-tag :type="usingVpn ? 'info' : 'success'" size="small">{{ usingVpn ? 'WireGuard VPN' : 'IP Publik' }}</n-tag>
+            <n-tag :type="usingVpn || usingLegacyVpn ? 'info' : 'success'" size="small">{{ registeredConnectionLabel }}</n-tag>
           </n-descriptions-item>
-          <n-descriptions-item label="RADIUS Address">
-            <n-text code>{{ (usingVpn ? routerData.vpn_ip : serverPublicIP) || '-' }}</n-text>
+          <n-descriptions-item label="IP Router untuk RADIUS">
+            <n-text code>{{ registeredRouterAddress || '-' }}</n-text>
           </n-descriptions-item>
           <n-descriptions-item label="IP Router Terdeteksi">
             <n-text v-if="routerData.nas_ip" code>{{ routerData.nas_ip }}</n-text>
@@ -1256,7 +1264,7 @@ onUnmounted(() => {
         </div>
         <div>
           <div class="cfg-modal-title">Panduan Setup {{ vendorLabel }}</div>
-          <div class="cfg-modal-subtitle">{{ isMikrotik ? 'Dari modem ISP, PPPoE pelanggan, hingga koneksi RADIUS' : supportsWireguard ? 'Hubungkan ke RADIUS via IP Publik atau WireGuard VPN' : 'Hubungkan ke RADIUS via IP Publik' }}</div>
+          <div class="cfg-modal-subtitle">{{ isMikrotik ? 'Dari modem ISP, PPPoE pelanggan, hingga koneksi RADIUS' : supportsWireguard ? 'Hubungkan ke RADIUS via WireGuard VPN atau IP Publik' : 'Panduan IP Publik dan pilihan koneksi tanpa IP publik' }}</div>
         </div>
       </div>
     </template>
@@ -1266,6 +1274,23 @@ onUnmounted(() => {
 
     <n-spin :show="configLoading">
     <div class="cfg-body">
+      <n-alert title="Tenant tidak wajib memiliki IP publik" type="info" style="margin-bottom: 20px">
+        Router atau gateway tenant dapat membuat tunnel VPN keluar ke server, termasuk dari belakang NAT/CGNAT.
+        Yang harus dapat dijangkau dari internet adalah endpoint VPN server.
+        <template v-if="isMikrotik">
+          Pilih <strong>WireGuard</strong> untuk RouterOS 7.1+ atau <strong>VPN L2TP/SSTP</strong> untuk RouterOS 6 pada tab Koneksi RADIUS.
+        </template>
+        <template v-else-if="guideType === 'vyos'">
+          Pilih <strong>WireGuard VPN</strong> di bawah. Panduan sudah memakai keepalive 25 detik untuk menjaga koneksi melalui NAT.
+        </template>
+        <template v-else>
+          Untuk {{ vendorLabel }}, periksa dukungan VPN sesuai model/firmware atau gunakan gateway WireGuard tambahan (MikroTik, VyOS, atau Linux).
+          <strong>Setup gateway belum tersedia otomatis di panduan ini.</strong>
+          Admin perlu menyiapkan IP unik per router, source/NAS-IP RADIUS, serta jalur balik CoA dan SNMP melalui tunnel.
+          Skrip di bawah khusus mode IP Publik; minta konfigurasi VPN sesuai perangkat sebelum menerapkannya pada router tanpa IP publik.
+        </template>
+        Jangan isi IP publik bersama milik ISP sebagai IP router: beberapa router atau tenant bisa berbagi IP tersebut.
+      </n-alert>
       <n-tabs v-if="isMikrotik" v-model:value="activeGuideTab" type="segment" size="large" class="cfg-tabs" animated>
 
         <!-- ══════════ TAB 1: PERSIAPAN (Modem ISP → MikroTik) ══════════ -->
@@ -1382,14 +1407,14 @@ onUnmounted(() => {
 
           <!-- Mode Selector -->
           <div class="cfg-mode-bar">
-            <button class="cfg-mode-btn" :class="{ active: connectionMode === 'direct' }" @click="connectionMode = 'direct'">
-              IP Publik <span class="cfg-mode-badge">Butuh IP publik di WAN</span>
+            <button class="cfg-mode-btn" :class="{ active: connectionMode === 'wireguard' }" @click="connectionMode = 'wireguard'">
+              WireGuard VPN <span class="cfg-mode-badge">ROS 7.1+ · Tanpa IP publik</span>
             </button>
             <button class="cfg-mode-btn" :class="{ active: connectionMode === 'legacy' }" @click="connectionMode = 'legacy'">
-              VPN L2TP/SSTP <span class="cfg-mode-badge">ROS 6 &amp; 7</span>
+              VPN L2TP/SSTP <span class="cfg-mode-badge">ROS 6 &amp; 7 · Tanpa IP publik</span>
             </button>
-            <button class="cfg-mode-btn" :class="{ active: connectionMode === 'wireguard' }" @click="connectionMode = 'wireguard'">
-              WireGuard VPN <span class="cfg-mode-badge">ROS 7.1+</span>
+            <button class="cfg-mode-btn" :class="{ active: connectionMode === 'direct' }" @click="connectionMode = 'direct'">
+              IP Publik <span class="cfg-mode-badge">Butuh IP publik di WAN</span>
             </button>
           </div>
 
@@ -1412,7 +1437,7 @@ onUnmounted(() => {
           </div>
           <div v-else class="cfg-banner cfg-banner--ok">
             <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
-            <span>Semua nilai sudah terisi otomatis dari server. Salin &amp; jalankan berurutan.</span>
+            <span>WireGuard dapat digunakan tanpa IP publik di router. Izinkan koneksi keluar ke server <strong>{{ effectiveServerPublicIP }}</strong> UDP <strong>{{ vpnListenPort }}</strong>; keepalive 25 detik menjaga koneksi melalui NAT. RADIUS dan CoA memakai alamat VPN. Salin &amp; jalankan skrip berurutan.</span>
           </div>
 
           <!-- Referensi nilai (ringkas) -->
@@ -1623,13 +1648,13 @@ onUnmounted(() => {
           Sesuaikan nama interface dengan perangkat Anda.
         </p>
 
-        <!-- Mode selector (hanya VyOS yang mendukung WireGuard) -->
+        <!-- Mode selector untuk panduan WireGuard VyOS -->
         <div v-if="guideType === 'vyos'" class="cfg-mode-bar">
-          <button class="cfg-mode-btn" :class="{ active: connectionMode === 'direct' }" @click="connectionMode = 'direct'">
-            IP Publik
-          </button>
           <button class="cfg-mode-btn" :class="{ active: connectionMode === 'wireguard' }" @click="connectionMode = 'wireguard'">
-            WireGuard VPN <span class="cfg-mode-badge">VPN Tunnel</span>
+            WireGuard VPN <span class="cfg-mode-badge">Tanpa IP publik</span>
+          </button>
+          <button class="cfg-mode-btn" :class="{ active: connectionMode === 'direct' }" @click="connectionMode = 'direct'">
+            IP Publik <span class="cfg-mode-badge">Butuh IP publik di WAN</span>
           </button>
         </div>
 
@@ -1659,7 +1684,7 @@ onUnmounted(() => {
         </div>
         <div v-else class="cfg-banner cfg-banner--ok">
           <n-icon class="cfg-banner-svg" :size="18"><CircleCheck /></n-icon>
-          <span>RADIUS dan CoA berjalan di dalam tunnel WireGuard. Izinkan UDP <strong>{{ coaPort }}</strong> (CoA) dan UDP <strong>161</strong> (status SNMP) masuk dari <strong>{{ cfg.server_vpn_ip || 'IP VPN server' }}</strong> di interface wg0.</span>
+          <span>Router tidak memerlukan IP publik. Izinkan koneksi keluar ke server <strong>{{ effectiveServerPublicIP }}</strong> UDP <strong>{{ vpnListenPort }}</strong>. RADIUS dan CoA berjalan di dalam tunnel WireGuard; izinkan UDP <strong>{{ coaPort }}</strong> (CoA) dan UDP <strong>161</strong> (status SNMP) masuk dari <strong>{{ cfg.server_vpn_ip || 'IP VPN server' }}</strong> di interface wg0.</span>
         </div>
 
         <!-- Langkah 1 (mode IP Publik): daftarkan IP publik router -->

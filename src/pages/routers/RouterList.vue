@@ -42,12 +42,12 @@ function resetForm() {
 const createForm = ref({ name: '', router_type: 'mikrotik' })
 
 const routerTypeOptions = [
-  { label: 'MikroTik', sub: 'RouterOS', value: 'mikrotik', desc: 'IP Publik, L2TP/SSTP & WireGuard VPN', badge: 'WireGuard', color: '#e11d48' },
-  { label: 'VyOS', sub: 'VyOS 1.4+ (accel-ppp)', value: 'vyos', desc: 'IP Publik & WireGuard VPN', badge: 'WireGuard', color: '#0891b2' },
-  { label: 'Cisco', sub: 'IOS / IOS-XE', value: 'cisco', desc: 'AAA RADIUS via IP Publik', badge: 'IP Publik', color: '#2563eb' },
-  { label: 'Huawei', sub: 'VRP / BRAS', value: 'huawei', desc: 'RADIUS template via IP Publik', badge: 'IP Publik', color: '#dc2626' },
-  { label: 'Juniper', sub: 'JunOS', value: 'juniper', desc: 'access-profile RADIUS', badge: 'IP Publik', color: '#0d9488' },
-  { label: 'Ruijie', sub: 'RG-OS', value: 'ruijie', desc: 'RADIUS via IP Publik', badge: 'IP Publik', color: '#7c3aed' },
+  { label: 'MikroTik', sub: 'RouterOS', value: 'mikrotik', desc: 'WireGuard / L2TP / SSTP tanpa IP publik; Direct', badge: 'VPN', color: '#e11d48' },
+  { label: 'VyOS', sub: 'VyOS 1.4+ (accel-ppp)', value: 'vyos', desc: 'WireGuard tanpa IP publik; Direct', badge: 'VPN', color: '#0891b2' },
+  { label: 'Cisco', sub: 'IOS / IOS-XE', value: 'cisco', desc: 'AAA RADIUS; VPN perlu setup khusus', badge: 'Panduan Direct', color: '#2563eb' },
+  { label: 'Huawei', sub: 'VRP / BRAS', value: 'huawei', desc: 'RADIUS template; VPN perlu setup khusus', badge: 'Panduan Direct', color: '#dc2626' },
+  { label: 'Juniper', sub: 'JunOS', value: 'juniper', desc: 'access-profile; VPN perlu setup khusus', badge: 'Panduan Direct', color: '#0d9488' },
+  { label: 'Ruijie', sub: 'RG-OS', value: 'ruijie', desc: 'RADIUS; VPN perlu setup khusus', badge: 'Panduan Direct', color: '#7c3aed' },
 ]
 // Pemilih jenis router (kartu + search), dipakai create & edit
 const typeSearch = ref('')
@@ -127,7 +127,7 @@ function formatUptime(raw: string | null): string {
 
 const columns = [
   {
-    title: 'Status VPN', key: 'is_online', width: 110, align: 'center' as const,
+    title: 'Status Router', key: 'is_online', width: 110, align: 'center' as const,
     render: (r: any) => h(NTooltip, {}, {
       trigger: () => h(NTag, {
         type: r.is_online ? 'success' : 'error',
@@ -138,7 +138,8 @@ const columns = [
     })
   },
   { title: 'Nama', key: 'name' },
-  { title: 'VPN IP', key: 'vpn_ip', render: (r: any) => r.vpn_ip || '-' },
+  { title: 'IP Koneksi', key: 'vpn_ip', render: (r: any) =>
+    (r.vpn_public_key ? r.vpn_ip : r.legacy_vpn_ip || r.nas_ip) || '-' },
   {
     title: 'RouterOS', key: 'router_os_ver',
     render: (r: any) => r.router_os_ver || '-',
@@ -379,6 +380,7 @@ onMounted(fetchData)
       <n-text v-if="editId" depth="3" style="display:block; margin: -6px 0 14px; font-size: 12px">
         IP WAN router yang dipakai server untuk mengenali RADIUS, mengirim CoA/isolir, dan polling status SNMP.
         MikroTik mengisinya otomatis lewat heartbeat; Cisco, Huawei, Juniper, Ruijie, dan VyOS mode IP Publik wajib diisi manual.
+        Kolom ini tidak wajib untuk VPN. Jika WAN privat/CGNAT, gunakan VPN dan jangan masukkan IP publik bersama milik ISP.
       </n-text>
 
       <!-- Pemilih jenis router (kartu + search) -->
@@ -412,6 +414,11 @@ onMounted(fetchData)
         </button>
         <div v-if="!filteredTypes.length" class="rf-type-empty">Tidak ada merek cocok dengan "{{ typeSearch }}"</div>
       </div>
+
+      <n-alert type="info" :show-icon="false" style="margin-top: 12px">
+        Tidak punya IP publik? MikroTik dan VyOS menyediakan panduan VPN langsung.
+        Untuk merek lain, VPN sesuai model atau gateway tambahan perlu dikonfigurasi admin; setup gateway belum tersedia otomatis.
+      </n-alert>
 
       <div class="modal-actions">
         <n-button @click="showModal = false">Batal</n-button>

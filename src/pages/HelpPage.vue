@@ -72,12 +72,27 @@ const sections: Section[] = [
         steps: [
           'Buka Jaringan → Router → Daftarkan Router, isi nama dan pilih jenis router.',
           'Buka detail router → tombol Konfigurasi. Panduan MikroTik terdiri dari 3 tab berurutan: Persiapan (WAN & internet), PPP Server, lalu Koneksi RADIUS.',
-          'Pilih mode koneksi sesuai kondisi: WireGuard (MikroTik RouterOS 7 / VyOS — paling disarankan), VPN Legacy L2TP/SSTP (RouterOS 6 atau router di belakang NAT tanpa IP publik), atau IP Publik (router punya IP publik langsung di WAN, tanpa NAT; satu-satunya mode untuk Cisco, Huawei, Juniper, dan Ruijie).',
+          'Tenant tidak wajib punya IP publik. Pilih WireGuard (MikroTik RouterOS 7.1+ / VyOS 1.4+) atau VPN L2TP/SSTP (MikroTik RouterOS 6 & 7) untuk koneksi dari belakang NAT/CGNAT. Mode IP Publik tersedia bila router memegang IP publik sendiri di WAN.',
+          'Untuk Cisco, Huawei, Juniper, dan Ruijie tanpa IP publik, periksa VPN sesuai model/firmware atau siapkan gateway VPN tambahan. Skrip otomatis saat ini mencakup mode IP Publik; setup VPN/gateway untuk merek ini memerlukan konfigurasi admin sesuai topologi.',
           'Mode IP Publik pada merek selain MikroTik: daftarkan IP publik router di langkah 1 panduan (atau kolom IP Publik di Edit Router). Tidak ada heartbeat di merek ini, jadi sebelum IP terdaftar semua autentikasi RADIUS ditolak.',
           'Sesuaikan nama interface, pool IP, dan placeholder pada panduan dengan jaringan Anda sebelum menjalankan skrip. Interim accounting 5 menit menjaga status sesi pelanggan tetap akurat; skrip MikroTik juga menyertakan one-session-per-host untuk mencegah sesi PPPoE ganda.',
           'Pastikan status menjadi Online. MikroTik dipantau via heartbeat; merek lain via polling SNMP ke IP yang terdaftar (VPN IP atau IP publik) — izinkan UDP 161 dari IP server.',
         ],
         tip: 'RADIUS Secret, CoA Port, dan Heartbeat Token di-generate otomatis — tidak perlu diisi manual. Router yang sudah lama terpasang cukup jalankan ulang blok "Use RADIUS di PPP" untuk mendapat setelan anti sesi ganda.',
+      },
+      {
+        icon: RouterIcon,
+        title: 'Router tanpa IP publik (NAT/CGNAT)',
+        desc: 'Gunakan koneksi VPN keluar dari tenant ke server agar RADIUS, accounting, dan CoA dapat memakai alamat router yang unik.',
+        steps: [
+          'Periksa alamat WAN router. Alamat 10.x.x.x, 172.16–31.x.x, 192.168.x.x, atau 100.64–127.x.x bukan IP publik router. IP yang tampil pada situs cek IP bisa merupakan alamat bersama milik ISP.',
+          'MikroTik RouterOS 7.1+ dan VyOS 1.4+: buka Konfigurasi → WireGuard VPN, pasang skrip, lalu daftarkan public key. Endpoint VPN server harus dapat diakses dari internet; tenant cukup mengizinkan koneksi keluar ke port UDP yang tertera. Keepalive 25 detik menjaga pemetaan NAT.',
+          'MikroTik RouterOS 6: buka Konfigurasi → Koneksi RADIUS → VPN L2TP/SSTP, buat kredensial, lalu pasang salah satu skrip tunnel dan blok RADIUS. Gunakan IP tunnel yang diberikan sebagai sumber RADIUS.',
+          'Cisco, Huawei, Juniper, dan Ruijie: dukungan VPN bergantung model dan firmware. Jika tidak cocok dengan VPN server, admin dapat menyiapkan gateway WireGuard (MikroTik, VyOS, atau Linux) di lokasi tenant. Alurnya: router NAS → gateway VPN → server RADIUS. Setup gateway belum tersedia otomatis di aplikasi.',
+          'Untuk gateway tambahan, rencanakan identitas/IP unik per router, source-address dan NAS-IP-Address yang sesuai, serta rute atau pemetaan balik CoA dan SNMP. Jangan menggabungkan beberapa router menjadi satu IP sumber RADIUS; NAT biasa tidak otomatis mengubah NAS-IP-Address di dalam paket.',
+          'Uji autentikasi pelanggan, pembaruan accounting, putus sesi/isolir melalui CoA, dan status monitoring. Tunnel yang tersambung saja belum membuktikan seluruh jalur RADIUS berfungsi.',
+        ],
+        tip: 'Jangan mendaftarkan IP publik bersama dari ISP sebagai identitas router. Siapkan merek/model, versi firmware, serta topologi WAN/LAN untuk menentukan konfigurasi gateway yang tepat.',
       },
       {
         icon: OltIcon,
